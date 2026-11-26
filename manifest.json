@@ -2,7 +2,7 @@
   {
     "guid": "3290c5ef-9e20-4cdf-ab34-87e9021bcc34",
     "name": "Magic Collections",
-    "overview": "Populate Jellyfin collections from external lists",
+    "overview": "Automatically make and update Jellyfin collections based on internet lists such as IMDb and letterboxd.",
     "description": "Sync public movie and TV lists to managed collections in your Jellyfin library.",
     "owner": "ghomasHudson",
     "category": "General",
