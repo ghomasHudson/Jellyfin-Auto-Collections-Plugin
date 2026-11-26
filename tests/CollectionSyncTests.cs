@@ -74,7 +74,7 @@ public class CollectionSyncTests
     }
 
     [Fact]
-    public async Task Backfills_a_renamed_managed_collection_even_when_no_source_entries_match()
+    public async Task Backfills_a_renamed_managed_collection_even_when_no_source_list_entries_match()
     {
         const string url = "https://lists.example/festival-picks";
         var library = new ControlledLibrary();

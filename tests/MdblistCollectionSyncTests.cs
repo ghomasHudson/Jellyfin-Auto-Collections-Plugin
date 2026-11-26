@@ -6,6 +6,7 @@ namespace MagicCollections.Tests;
 
 public sealed class MdblistCollectionSyncTests : IDisposable
 {
+    private const string TopMoviesUrl = "https://mdblist.com/lists/garycrawfordgc/top-movies";
     private readonly ControlledLibrary _library = new();
     private readonly Dictionary<string, Func<HttpResponseMessage>> _responses = [];
     private readonly HttpClient _http;
@@ -149,26 +150,19 @@ public sealed class MdblistCollectionSyncTests : IDisposable
     [InlineData(null)] // No HTTP response: a connection failure.
     public async Task Reports_an_MDBList_fetch_failure_with_the_source_list_URL(HttpStatusCode? status)
     {
-        const string sourceListUrl = "https://mdblist.com/lists/garycrawfordgc/top-movies";
-        RecordBody(sourceListUrl, Fixture("top-movies.html"));
-        _responses[sourceListUrl + "/json"] = () => status is { } code ? new(code) : throw new HttpRequestException("Connection failed.");
+        var failure = await SyncFailingTopMoviesSourceListAsync(status);
 
-        var failure = await Assert.ThrowsAsync<SourceListReadException>(() => SyncSourceListAsync(sourceListUrl));
-
-        Assert.Contains(sourceListUrl, failure.Message);
+        Assert.Contains(TopMoviesUrl, failure.Message);
         Assert.Contains("fetch failed", failure.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(_library.ManagedCollections);
     }
 
     [Fact]
-    public async Task Leaves_a_managed_collection_without_a_poster_when_its_source_fetch_fails()
+    public async Task Leaves_a_managed_collection_without_a_poster_when_its_source_list_fetch_fails()
     {
-        const string sourceListUrl = "https://mdblist.com/lists/garycrawfordgc/top-movies";
-        await _library.CreateAsync("Top Movies", $"AutoCollections:{sourceListUrl}");
-        RecordBody(sourceListUrl, Fixture("top-movies.html"));
-        _responses[sourceListUrl + "/json"] = () => new(HttpStatusCode.ServiceUnavailable);
+        await _library.CreateAsync("Top Movies", $"AutoCollections:{TopMoviesUrl}");
 
-        await Assert.ThrowsAsync<SourceListReadException>(() => SyncSourceListAsync(sourceListUrl));
+        await SyncFailingTopMoviesSourceListAsync(HttpStatusCode.ServiceUnavailable);
 
         Assert.Null(Assert.Single(_library.ManagedCollections).PosterTitle);
     }
@@ -207,6 +201,14 @@ public sealed class MdblistCollectionSyncTests : IDisposable
 
     private Task SyncSourceListAsync(string sourceListUrl) =>
         _sync.RunAsync([sourceListUrl], unsupported => Assert.Fail($"Unexpected unsupported source list URL: {unsupported}"), CancellationToken.None);
+
+    private Task<SourceListReadException> SyncFailingTopMoviesSourceListAsync(HttpStatusCode? status)
+    {
+        RecordBody(TopMoviesUrl, Fixture("top-movies.html"));
+        _responses[TopMoviesUrl + "/json"] = () =>
+            status is { } code ? new(code) : throw new HttpRequestException("Connection failed.");
+        return Assert.ThrowsAsync<SourceListReadException>(() => SyncSourceListAsync(TopMoviesUrl));
+    }
 
     private void RecordSourceList(string pageUrl, string html, string json)
     {

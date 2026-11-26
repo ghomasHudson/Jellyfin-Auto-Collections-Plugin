@@ -57,15 +57,58 @@ internal sealed class JellyfinCollectionLibrary(
 
     public async Task EnsurePosterAsync(Guid id, CancellationToken cancellationToken)
     {
-        if (library.GetItemById(id) is not BoxSet collection || collection.HasImage(ImageType.Primary, 0))
+        if (library.GetItemById(id) is not BoxSet collection || HasCurrentPoster(collection))
         {
             return;
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         using var poster = CollectionPoster.Render(collection.Name);
-        await providers.SaveImage(collection, poster, MediaTypeNames.Image.Png, ImageType.Primary, null, cancellationToken)
+
+        // Jellyfin's SaveImage isn't conditional. Recheck after rendering to narrow the
+        // race with an upload, but another writer can still enter after this check.
+        cancellationToken.ThrowIfCancellationRequested();
+        if (library.GetItemById(id) is not BoxSet current || HasCurrentPoster(current))
+        {
+            return;
+        }
+
+        await providers.SaveImage(current, poster, MediaTypeNames.Image.Png, ImageType.Primary, null, cancellationToken)
             .ConfigureAwait(false);
-        await collection.UpdateToRepositoryAsync(ItemUpdateType.ImageUpdate, CancellationToken.None).ConfigureAwait(false);
+        await current.UpdateToRepositoryAsync(ItemUpdateType.ImageUpdate, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private static bool HasCurrentPoster(BoxSet collection)
+    {
+        var image = collection.GetImageInfo(ImageType.Primary, 0);
+        if (image is null)
+        {
+            return false;
+        }
+
+        var path = image.Path;
+        if (!image.IsLocalFile || !Path.IsPathFullyQualified(path))
+        {
+            return true;
+        }
+
+        try
+        {
+            // File.Exists also returns false for access and I/O errors.
+            _ = File.GetAttributes(path);
+            return true;
+        }
+        catch (FileNotFoundException)
+        {
+            return false;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return false;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return true;
+        }
     }
 }

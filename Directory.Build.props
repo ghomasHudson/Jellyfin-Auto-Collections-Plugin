@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <!-- Match the libraries Jellyfin 10.11.5 provides at runtime. -->
+    <HostSkiaSharpVersion>3.116.1</HostSkiaSharpVersion>
+    <HostHarfBuzzSharpVersion>8.3.1.1</HostHarfBuzzSharpVersion>
+  </PropertyGroup>
+</Project>
