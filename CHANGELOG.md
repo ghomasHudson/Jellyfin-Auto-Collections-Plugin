@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.2.0 (2026-11-26)
+
+### Feat
+
+- **letterboxd**: cache film IDs until manually cleared
+
 ## v0.2.1.0 (2026-11-26)
 
 ### Feat
