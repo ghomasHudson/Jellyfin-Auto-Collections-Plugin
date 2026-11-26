@@ -1,6 +1,6 @@
-using Jellyfin.Plugin.AutoCollections.Sync;
+using Jellyfin.Plugin.MagicCollections.Sync;
 
-namespace AutoCollections.Tests;
+namespace MagicCollections.Tests;
 
 internal sealed class ControlledLibrary : ICollectionLibrary
 {

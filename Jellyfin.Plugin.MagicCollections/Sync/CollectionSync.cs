@@ -1,4 +1,4 @@
-namespace Jellyfin.Plugin.AutoCollections.Sync;
+namespace Jellyfin.Plugin.MagicCollections.Sync;
 
 public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICollectionLibrary library)
 {
@@ -28,6 +28,7 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            // Keep the persisted tag so existing collections still match their source lists.
             var tag = $"AutoCollections:{source.AbsoluteUri}";
             var existing = library.FindByTag(tag);
             var id = existing?.Id ?? await library.CreateAsync(CollectionName(list, source), tag).ConfigureAwait(false);

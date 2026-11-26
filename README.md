@@ -1,4 +1,4 @@
-# Jellyfin Auto Collections Plugin
+# Jellyfin Magic Collections Plugin
 
 <img width="872" height="485" alt="image" src="https://github.com/user-attachments/assets/12843847-4166-4a5a-82ca-07839e264ac8" />
 
@@ -9,13 +9,36 @@ Will publish it as a proper plugin when it's further along.
 
 ## Build and install
 
-The plugin targets Jellyfin Server **10.11.5**. Install the **.NET 9 SDK** (tested with 9.0.321), then run this command from the repository root:
+The plugin targets Jellyfin Server **10.11.5**. Install the **.NET 9 SDK** (9.0.200 or a newer 9.0 SDK), then run this command from the repository root:
 
 ```sh
-dotnet test AutoCollections.slnx -c Release
+dotnet test MagicCollections.slnx -c Release
 ```
 
-This builds the plugin and runs the tests. Stop Jellyfin, create an `AutoCollections` directory under the server’s `plugins` directory, and copy `Jellyfin.Plugin.AutoCollections/bin/Release/net9.0/Jellyfin.Plugin.AutoCollections.dll` into it. Start Jellyfin again.
+This builds the plugin and runs the tests. Stop Jellyfin, create a `MagicCollections` directory under the server’s `plugins` directory, and copy `Jellyfin.Plugin.MagicCollections/bin/Release/net9.0/Jellyfin.Plugin.MagicCollections.dll` into it. Start Jellyfin again.
+
+If upgrading from Auto Collections, remove `plugins/AutoCollections/Jellyfin.Plugin.AutoCollections.dll` before restarting Jellyfin. Leave the configuration file in place. Your saved list URLs, sync schedule, and managed collections carry over.
+
+## Contributing
+
+Use [Commitizen](https://commitizen-tools.github.io/commitizen/) to write Conventional Commits. Install it with [pipx](https://pipx.pypa.io/), then use `cz commit` instead of `git commit` after staging your changes:
+
+```sh
+pipx install 'commitizen==4.20.1'  # one-time setup
+git add <files>
+cz commit
+```
+
+For example: `fix(sync): skip duplicate collection entries`.
+
+GitHub Actions builds and tests every pull request and every push to `main`. It also checks the commits introduced by each pull request without checking the base branch's existing history. For a branch targeting `main`, preview the commit check locally:
+
+```sh
+git fetch origin
+cz check --rev-range origin/main..HEAD
+```
+
+If you squash-merge a pull request, use a Conventional Commit subject for the resulting commit too.
 
 ## Try the plugin in Docker
 
@@ -25,11 +48,13 @@ Run this from the repository root. Docker Compose builds the plugin and starts J
 docker compose up --build -d
 ```
 
+To keep an existing Auto Collections sandbox and its data, run `docker compose -p autocollections-dev up --build -d`. Use `-p autocollections-dev` with any later Compose commands for that sandbox.
+
 Open <http://localhost:8097> and complete the Jellyfin setup wizard. If port 8097 is in use, set `JELLYFIN_TEST_PORT` to a free port before starting Compose.
 
 1. Bind-mount a test media directory into the container and add it as a Jellyfin library. Include a movie or series from the public MDBList you want to try, and check that the Jellyfin item has a matching provider ID (TMDb, IMDb, or TVDb).
-2. Open **Dashboard → Plugins → Auto Collections**. Save the full list page URL and reopen the page to confirm it was saved.
-3. Open **Dashboard → Scheduled Tasks → Sync Auto Collections**. Check that it has a daily trigger, then select **Run now**.
+2. Open **Dashboard → Plugins → Magic Collections**. Save the full list page URL and reopen the page to confirm it was saved.
+3. Open **Dashboard → Scheduled Tasks → Sync Magic Collections**. Check that it has a daily trigger, then select **Run now**.
 4. Open **Collections** in Jellyfin and check that the managed collection contains your matching item.
 
 After editing the plugin, rerun `docker compose up --build -d` to install the rebuilt DLL.
@@ -39,14 +64,14 @@ After editing the plugin, rerun `docker compose up --build -d` to install the re
 
 ## Configure and run
 
-1. Open **Dashboard → Plugins → Auto Collections**. Paste a full public MDBList source list URL into the blank field. To add more URLs, use the next blank field that appears. Select **Save**. For example:
+1. Open **Dashboard → Plugins → Magic Collections**. Paste a full public MDBList source list URL into the blank field. To add more URLs, use the next blank field that appears. Select **Save**. For example:
    - <https://mdblist.com/lists/garycrawfordgc/top-movies>
    - <https://mdblist.com/lists/official/movies/popular>
 
    Use the URL from your browser, not a `/json` export URL. No MDBList account or API key is needed.
 
    MDBList’s interactive JustWatch charts for movies and shows (`justwatch-streaming-charts`) are unsupported because their JSON export ignores the chart filters. The regular `streaming-charts` source list is supported.
-2. Open **Dashboard → Scheduled Tasks → Sync Auto Collections**. The default trigger is daily at 03:00 server time. Select **Run now** to run the same task immediately.
+2. Open **Dashboard → Scheduled Tasks → Sync Magic Collections**. The default trigger is daily at 03:00 server time. Select **Run now** to run the same task immediately.
 3. If the task fails, check the task result or Jellyfin server log.
 
 A failed fetch or invalid list response stops the run and reports the source list URL without changing its managed collection. Unsupported URLs are logged and skipped. A valid empty source list is not a fetch error.
@@ -55,6 +80,8 @@ A failed fetch or invalid list response stops the run and reports the source lis
 
 Implement `ISourceListHandler` to recognize a site's URLs and return a `SourceList` with an optional name and entries containing a media type and provider IDs. Register the implementation for `ISourceListHandler` in `ServiceRegistrator`. The handler only reads the source list.
 
-`CollectionSync` matches movies and series by media type and at least one shared provider name and ID. It finds the collection by its `AutoCollections:<absolute source URL>` tag and adds only missing members. A new collection uses the list name, or the final URL segment with spaces in place of hyphens and underscores. `JellyfinCollectionLibrary` handles Jellyfin queries and writes.
+`CollectionSync` matches movies and series by media type and at least one shared provider name and ID. It still finds existing collections by their `AutoCollections:<absolute source URL>` tags. It adds only missing members.
+
+A new collection uses the list name, or the final URL segment with spaces in place of hyphens and underscores. `JellyfinCollectionLibrary` handles Jellyfin queries and writes.
 
 The plugin and settings page are adapted from the [official Jellyfin plugin template](https://github.com/jellyfin/jellyfin-plugin-template/tree/c93225a0a5a76d3843db05b4b5b77fcfc482fba3).

@@ -1,10 +1,10 @@
 using System.Net;
-using Jellyfin.Plugin.AutoCollections.Sync;
+using Jellyfin.Plugin.MagicCollections.Sync;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Jellyfin.Plugin.AutoCollections;
+namespace Jellyfin.Plugin.MagicCollections;
 
 public sealed class ServiceRegistrator : IPluginServiceRegistrator
 {

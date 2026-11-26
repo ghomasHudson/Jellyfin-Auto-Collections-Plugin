@@ -1,4 +1,0 @@
-<Solution>
-  <Project Path="Jellyfin.Plugin.AutoCollections/Jellyfin.Plugin.AutoCollections.csproj" />
-  <Project Path="tests/AutoCollections.Tests.csproj" />
-</Solution>

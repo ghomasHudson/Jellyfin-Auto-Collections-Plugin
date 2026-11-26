@@ -1,12 +1,12 @@
 using Jellyfin.Data.Enums;
-using Jellyfin.Plugin.AutoCollections.Sync;
+using Jellyfin.Plugin.MagicCollections.Sync;
 using MediaBrowser.Controller.Collections;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
 
-namespace Jellyfin.Plugin.AutoCollections;
+namespace Jellyfin.Plugin.MagicCollections;
 
 internal sealed class JellyfinCollectionLibrary(ILibraryManager library, ICollectionManager collections) : ICollectionLibrary
 {
@@ -40,7 +40,7 @@ internal sealed class JellyfinCollectionLibrary(ILibraryManager library, ICollec
         // Use a private storage name so a display namesake cannot collide with it.
         var collection = await collections.CreateCollectionAsync(new CollectionCreationOptions
         {
-            Name = $"AutoCollections-{Guid.NewGuid():N}"
+            Name = $"MagicCollections-{Guid.NewGuid():N}"
         }).ConfigureAwait(false);
         collection.Name = name;
         collection.Tags = [.. collection.Tags, tag];

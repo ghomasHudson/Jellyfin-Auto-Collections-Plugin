@@ -3,3 +3,6 @@ obj/
 .vs/
 .idea/
 artifacts
+docs/
+GLOSSARY.md
+AGENTS.md

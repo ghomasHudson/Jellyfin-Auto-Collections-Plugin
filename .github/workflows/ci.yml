@@ -21,7 +21,7 @@ jobs:
         with:
           dotnet-version: '9.0.x'
       - name: Run tests in Release mode
-        run: dotnet test AutoCollections.slnx -c Release
+        run: dotnet test MagicCollections.slnx -c Release
 
   commit-messages:
     name: Check commit messages

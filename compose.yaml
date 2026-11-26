@@ -1,4 +1,4 @@
-name: autocollections-dev
+name: magiccollections-dev
 services:
   jellyfin:
     build: .

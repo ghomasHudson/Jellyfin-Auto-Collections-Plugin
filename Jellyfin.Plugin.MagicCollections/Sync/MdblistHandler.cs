@@ -3,7 +3,7 @@ using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace Jellyfin.Plugin.AutoCollections.Sync;
+namespace Jellyfin.Plugin.MagicCollections.Sync;
 
 public sealed class MdblistHandler(HttpClient http) : ISourceListHandler
 {

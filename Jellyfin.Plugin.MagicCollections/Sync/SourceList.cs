@@ -1,4 +1,4 @@
-namespace Jellyfin.Plugin.AutoCollections.Sync;
+namespace Jellyfin.Plugin.MagicCollections.Sync;
 
 public enum SourceMediaType { Movie, Series }
 

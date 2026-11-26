@@ -1,7 +1,7 @@
-using Jellyfin.Plugin.AutoCollections.Sync;
+using Jellyfin.Plugin.MagicCollections.Sync;
 using Xunit;
 
-namespace AutoCollections.Tests;
+namespace MagicCollections.Tests;
 
 public class CollectionSyncTests
 {

@@ -1,26 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Auto Collections</title></head>
+<head><meta charset="utf-8"><title>Magic Collections</title></head>
 <body>
-    <div id="autoCollectionsPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button,emby-input">
+    <div id="magicCollectionsPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button,emby-input">
         <style>
-            #autoCollectionsUrls > .inputContainer:not(:last-child) {
+            #magicCollectionsUrls > .inputContainer:not(:last-child) {
                 margin-bottom: .6em;
             }
-            #autoCollectionsUrls .inputLabel {
+            #magicCollectionsUrls .inputLabel {
                 display: none;
             }
         </style>
         <div data-role="content">
             <div class="content-primary">
-                <h1>Auto Collections</h1>
+                <h1>Magic Collections</h1>
                 <form>
-                    <h3 id="autoCollectionsUrlsHeading">Source list URLs</h3>
+                    <h3 id="magicCollectionsUrlsHeading">Source list URLs</h3>
                     <p class="fieldDescription">Add URLs for list sources. Must be a list source supported by the plugin.</p>
-                    <div id="autoCollectionsUrls" role="group" aria-labelledby="autoCollectionsUrlsHeading"></div>
+                    <div id="magicCollectionsUrls" role="group" aria-labelledby="magicCollectionsUrlsHeading"></div>
                     <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
                 </form>
-                <template id="autoCollectionsUrlRow">
+                <template id="magicCollectionsUrlRow">
                     <div class="inputContainer">
                         <input is="emby-input" type="text" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://mdblist.com/lists/snoak/latest-movies-digital-release" />
                     </div>
@@ -30,10 +30,10 @@
         <script>
             (() => {
                 const pluginId = '3290c5ef-9e20-4cdf-ab34-87e9021bcc34';
-                const page = document.querySelector('#autoCollectionsPage');
+                const page = document.querySelector('#magicCollectionsPage');
                 const form = page.querySelector('form');
-                const urls = page.querySelector('#autoCollectionsUrls');
-                const template = page.querySelector('#autoCollectionsUrlRow');
+                const urls = page.querySelector('#magicCollectionsUrls');
+                const template = page.querySelector('#magicCollectionsUrlRow');
 
                 function urlLabel(index) {
                     return `Source list URL ${index + 1}`;

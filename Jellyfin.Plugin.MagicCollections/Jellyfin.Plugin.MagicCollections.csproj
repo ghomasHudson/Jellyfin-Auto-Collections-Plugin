@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
-    <RootNamespace>Jellyfin.Plugin.AutoCollections</RootNamespace>
+    <RootNamespace>Jellyfin.Plugin.MagicCollections</RootNamespace>
     <Version>0.1.0.0</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

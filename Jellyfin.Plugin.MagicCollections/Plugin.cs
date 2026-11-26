@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using Jellyfin.Plugin.AutoCollections.Configuration;
+using Jellyfin.Plugin.MagicCollections.Configuration;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
 
-namespace Jellyfin.Plugin.AutoCollections;
+namespace Jellyfin.Plugin.MagicCollections;
 
 /// <summary>
 /// The main plugin.
@@ -26,10 +26,13 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     }
 
     /// <inheritdoc />
-    public override string Name => "Auto Collections";
+    public override string Name => "Magic Collections";
 
     /// <inheritdoc />
     public override Guid Id => Guid.Parse("3290c5ef-9e20-4cdf-ab34-87e9021bcc34");
+
+    // Keep reading the existing settings after renaming the DLL.
+    public override string ConfigurationFileName => "Jellyfin.Plugin.AutoCollections.xml";
 
     /// <summary>
     /// Gets the current plugin instance.
