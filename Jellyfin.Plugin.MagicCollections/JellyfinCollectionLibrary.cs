@@ -55,6 +55,17 @@ internal sealed class JellyfinCollectionLibrary(
     public Task AddMembersAsync(Guid id, IReadOnlyCollection<Guid> memberIds) =>
         collections.AddToCollectionAsync(id, memberIds);
 
+    public Task SetOverviewAsync(Guid id, string overview, CancellationToken cancellationToken)
+    {
+        if (library.GetItemById(id) is not BoxSet collection || collection.Overview == overview)
+        {
+            return Task.CompletedTask;
+        }
+
+        collection.Overview = overview;
+        return collection.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, cancellationToken);
+    }
+
     public async Task EnsurePosterAsync(Guid id, CancellationToken cancellationToken)
     {
         if (library.GetItemById(id) is not BoxSet collection || HasCurrentPoster(collection))

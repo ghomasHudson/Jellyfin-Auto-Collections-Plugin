@@ -28,7 +28,7 @@ public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
             throw new ArgumentException("Not a public Letterboxd list URL.", nameof(url));
         }
 
-        var (name, filmPaths) = await ReadMembershipAsync(url, cancellationToken).ConfigureAwait(false);
+        var (name, description, filmPaths) = await ReadMembershipAsync(url, cancellationToken).ConfigureAwait(false);
         var items = new List<MediaIdentity>();
         foreach (var filmPath in filmPaths)
         {
@@ -45,16 +45,17 @@ public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
             }
         }
 
-        return new(name, items);
+        return new(name, items, description);
     }
 
-    private async Task<(string Name, List<string> FilmPaths)> ReadMembershipAsync(Uri url, CancellationToken cancellationToken)
+    private async Task<(string Name, string? Description, List<string> FilmPaths)> ReadMembershipAsync(Uri url, CancellationToken cancellationToken)
     {
         var pagePath = url.AbsolutePath;
         var pageNumber = 1;
         var seen = 0;
         int? total = null;
         string? name = null;
+        string? description = null;
         var filmPaths = new List<string>();
         var uniqueFilmPaths = new HashSet<string>(StringComparer.Ordinal);
         var entryIds = new HashSet<string>(StringComparer.Ordinal);
@@ -62,6 +63,11 @@ public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
         {
             var document = await FetchPageAsync(url, pagePath, cancellationToken).ConfigureAwait(false);
             var page = ParseListPage(document, url, pagePath);
+            if (pageNumber == 1)
+            {
+                var intro = document.QuerySelector(ListContent + " .list-title-intro");
+                description = ListDescription.Read(intro?.QuerySelector("#list-notes") ?? intro?.QuerySelector(".body-text"));
+            }
             if ((name is not null && name != page.Name) || (total is not null && total != page.Total))
             {
                 throw InvalidPage(url, pagePath, "the list name or size changed between pages");
@@ -94,7 +100,7 @@ public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
                 {
                     throw InvalidPage(url, pagePath, "unexpected extra page");
                 }
-                return (name, filmPaths);
+                return (name, description, filmPaths);
             }
 
             var expectedNext = $"{url.AbsolutePath}page/{(++pageNumber).ToString(CultureInfo.InvariantCulture)}/";

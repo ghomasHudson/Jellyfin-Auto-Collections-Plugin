@@ -19,6 +19,40 @@ public sealed class MdblistCollectionSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task Uses_the_MDBList_source_list_description_as_the_new_managed_collection_overview()
+    {
+        RecordSourceList(TopMoviesUrl, """
+            <h3 class="textdark">Top movies</h3>
+            <span class="ui small text wrap"><p>  <strong>Festival</strong> picks &amp; discoveries.  </p></span>
+            <div class="card"><div class="description">A movie synopsis.</div></div>
+            """, Fixture("top-movies.json"));
+        _library.Media.Add(new(Guid.NewGuid(), new(SourceMediaType.Movie, new Dictionary<string, string> { ["Tmdb"] = "577922" })));
+
+        await SyncSourceListAsync(TopMoviesUrl);
+
+        Assert.Equal("Festival picks & discoveries.", Assert.Single(_library.ManagedCollections).Overview);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("""<span class="ui small text wrap"><p>&nbsp;</p></span>""")]
+    public async Task Preserves_the_managed_collection_overview_without_an_MDBList_description(string descriptionMarkup)
+    {
+        RecordSourceList(TopMoviesUrl, $"""
+            <h3 class="textdark">Top movies</h3>
+            {descriptionMarkup}
+            <div class="description">A movie synopsis.</div>
+            """, "[]");
+        await _library.CreateAsync("Top movies", $"AutoCollections:{TopMoviesUrl}");
+        var collection = Assert.Single(_library.ManagedCollections);
+        collection.Overview = "My overview";
+
+        await SyncSourceListAsync(TopMoviesUrl);
+
+        Assert.Equal("My overview", collection.Overview);
+    }
+
+    [Fact]
     public async Task Syncs_a_public_MDBList_source_list_by_Tmdb_ID_without_duplicating_the_managed_collection_or_member()
     {
         const string sourceListUrl = "https://mdblist.com/lists/garycrawfordgc/top-movies";
