@@ -1,4 +1,4 @@
-# Jellyfin Auto Collections
+# Jellyfin Auto Collections Plugin
 
 <img width="872" height="485" alt="image" src="https://github.com/user-attachments/assets/12843847-4166-4a5a-82ca-07839e264ac8" />
 
