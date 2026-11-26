@@ -25,11 +25,12 @@ Run this from the repository root. Docker Compose builds the plugin and starts J
 docker compose up --build -d
 ```
 
-Open <http://localhost:8097> and complete the Jellyfin setup wizard. You can skip adding a media library. If port 8097 is in use, set `JELLYFIN_TEST_PORT` to a free port before starting Compose.
+Open <http://localhost:8097> and complete the Jellyfin setup wizard. If port 8097 is in use, set `JELLYFIN_TEST_PORT` to a free port before starting Compose.
 
-1. Open **Dashboard → Plugins → Auto Collections**. Save `https://example.com/test-list` and reopen the page to check that the URL is still there.
-2. Open **Dashboard → Scheduled Tasks → Sync Auto Collections** and run the task.
-3. Run `docker compose logs jellyfin` and look for `Unsupported source list URL: https://example.com/test-list`. This confirms the task reads the saved URL. No collection is created because this version has no live source list handler.
+1. Bind-mount a test media directory into the container and add it as a Jellyfin library. Include a movie or series from the public MDBList you want to try, and check that the Jellyfin item has a matching provider ID (TMDb, IMDb, or TVDb).
+2. Open **Dashboard → Plugins → Auto Collections**. Save the full list page URL and reopen the page to confirm it was saved.
+3. Open **Dashboard → Scheduled Tasks → Sync Auto Collections**. Check that it has a daily trigger, then select **Run now**.
+4. Open **Collections** in Jellyfin and check that the managed collection contains your matching item.
 
 After editing the plugin, rerun `docker compose up --build -d` to install the rebuilt DLL.
 
@@ -38,9 +39,15 @@ After editing the plugin, rerun `docker compose up --build -d` to install the re
 
 ## Configure and run
 
-1. Open **Dashboard → Plugins → Auto Collections**. Enter one source list URL per line and select **Save**. Reopen the page to see the saved list.
+1. Open **Dashboard → Plugins → Auto Collections**. Paste one full public MDBList page URL per line and select **Save**. For example:
+   - <https://mdblist.com/lists/garycrawfordgc/top-movies>
+   - <https://mdblist.com/lists/official/movies/popular>
+
+   Use the URL from your browser, not a `/json` export URL. No MDBList account or API key is needed.
 2. Open **Dashboard → Scheduled Tasks → Sync Auto Collections**. The default trigger is daily at 03:00 server time. Select **Run now** to run the same task immediately.
-3. Check the Jellyfin server log for unsupported URLs. The task skips each unsupported URL and continues with the next one.
+3. If the task fails, check the task result or Jellyfin server log.
+
+A failed fetch or invalid list response stops the run and reports the source URL without changing its collection. Unsupported URLs are logged and skipped. A valid empty list is not a fetch error.
 
 ## Add a handler
 

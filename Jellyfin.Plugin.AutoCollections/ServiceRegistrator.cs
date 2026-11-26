@@ -1,3 +1,4 @@
+using System.Net;
 using Jellyfin.Plugin.AutoCollections.Sync;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
@@ -9,7 +10,19 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
 {
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
+        // Keep one client for the lifetime of the plugin without replacing Jellyfin's own HTTP services.
+        serviceCollection.AddSingleton(_ => new MdblistHttpClient());
+        serviceCollection.AddSingleton<ISourceListHandler>(services =>
+            new MdblistHandler(services.GetRequiredService<MdblistHttpClient>()));
         serviceCollection.AddSingleton<ICollectionLibrary, JellyfinCollectionLibrary>();
         serviceCollection.AddSingleton<CollectionSync>();
     }
+
+    private sealed class MdblistHttpClient() : HttpClient(new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+        AllowAutoRedirect = false,
+        UseCookies = false,
+        AutomaticDecompression = DecompressionMethods.All
+    });
 }
