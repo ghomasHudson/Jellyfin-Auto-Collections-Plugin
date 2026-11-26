@@ -21,32 +21,26 @@ WIP attempt to take the lessons learned from [Jellyfin-Auto-Collections](https:/
 
 ## Supported list sources
 
+Here are the sites currently supported and examples of the urls:
+
+- MDBList
+   - https://mdblist.com/lists/garycrawfordgc/top-movies
+   - https://mdblist.com/lists/official/movies/popular
+- Steven Lu’s Popular Movies
+   - https://popular-movies-data.stevenlu.com/movies.json
+   - https://popular-movies-data.stevenlu.com/all-movies.json
+   - https://popular-movies-data.stevenlu.com/movies-metacritic-min70.json
+   - https://popular-movies-data.stevenlu.com/movies-imdb-min7.json
+   - https://popular-movies-data.stevenlu.com/movies-rottentomatoes-min80.json
+
 ### MDBList
 
-Use the URL from your browser, not a `/json` export URL. No account or API key is needed. The plugin supports public user lists and official movie and show lists, for example:
+Use the URL from your browser, not a `/json` export URL. The plugin supports public user lists and official movie and show lists, for example:
 
 - <https://mdblist.com/lists/garycrawfordgc/top-movies>
 - <https://mdblist.com/lists/official/movies/popular>
 
 The regular `streaming-charts` list works. The interactive JustWatch charts (`justwatch-streaming-charts`) do not, because their JSON export ignores the chart filters.
-
-### Steven Lu’s Popular Movies
-
-Paste a direct HTTPS feed URL. The feeds are public.
-
-- Popular movies: <https://popular-movies-data.stevenlu.com/movies.json>
-- All movies: <https://popular-movies-data.stevenlu.com/all-movies.json>
-- Metacritic: <https://popular-movies-data.stevenlu.com/movies-metacritic-min70.json>
-- IMDb: <https://popular-movies-data.stevenlu.com/movies-imdb-min7.json>
-- Rotten Tomatoes: <https://popular-movies-data.stevenlu.com/movies-rottentomatoes-min80.json>
-
-Metacritic and Rotten Tomatoes offer minimum scores of 50, 60, 70, and 80. IMDb offers 5, 6, 7, and 8. Use the exact host and documented path without a port, query string, or fragment. The plugin rejects historical snapshots and does not follow redirects.
-
-The feeds roll over nightly. The sync task matches movies by IMDb or TMDb ID, adds missing matches, and keeps existing members even if they drop off the feed.
-
-[Upstream asks clients](https://github.com/sjlu/popular-movies#usage) to poll no more than once a day. Scheduled runs and **Run now** use the same sync task and share the same limit: at most one fetch attempt per feed in 24 hours. This is a ceiling, not a guarantee of fresh data every day. The next fetch happens on the first sync that reaches the feed after the 24 hours have elapsed.
-
-Between fetches, sync uses the saved result, including an empty list, to match new library items. If the fetch failed, sync reports the saved error. Restarting Jellyfin or removing and re-adding a URL does not reset the limit. If Jellyfin stops before saving the result, sync reports the interrupted attempt instead of retrying early. This limit applies only to Steven Lu’s feeds.
 
 ### Not yet supported
 
