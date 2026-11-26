@@ -1,6 +1,6 @@
 # Jellyfin Magic Collections Plugin
 
-<img width="872" height="485" alt="image" src="https://github.com/user-attachments/assets/12843847-4166-4a5a-82ca-07839e264ac8" />
+<img width="829" height="412" alt="image" src="https://github.com/user-attachments/assets/ea0bad46-a704-471d-b4bc-a9a8e2cda694" />
 
 WIP attempt to take the lessons learned from [Jellyfin-Auto-Collections](https://github.com/ghomasHudson/Jellyfin-Auto-Collections) and turn it into a native jellyfin plugin.
 
