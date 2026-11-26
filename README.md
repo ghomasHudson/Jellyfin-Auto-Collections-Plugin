@@ -19,15 +19,34 @@ WIP attempt to take the lessons learned from [Jellyfin-Auto-Collections](https:/
 5. Go to the **Catalog** tab, locate **Magic Collections**, and click **Install**.
 6. Restart your Jellyfin server.
 
+## Supported list sources
+
+**MDBList is the only supported site right now.** Use the URL from your browser, not a `/json` export URL. No account or API key is needed. The plugin supports public user lists and official movie and show lists, for example:
+
+- <https://mdblist.com/lists/garycrawfordgc/top-movies>
+- <https://mdblist.com/lists/official/movies/popular>
+
+The regular `streaming-charts` list works. The interactive JustWatch charts (`justwatch-streaming-charts`) do not, because their JSON export ignores the chart filters.
+
+### Not yet supported
+
+Follow these issues for the status of other sources from Jellyfin Auto Collections:
+
+- [BFI film lists](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/16)
+- [Criterion Channel](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/18)
+- [IMDb lists and charts](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/13)
+- [Jellyfin library queries](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/21)
+- [Letterboxd](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/14)
+- [ListMania](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/12)
+- [Radarr tags](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/19)
+- [Sonarr tags](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/20)
+- [Steven Lu’s Popular Movies](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/11)
+- [They Shoot Pictures, Don’t They? (TSPDT)](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/17)
+- [Trakt lists and charts](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/15)
+
 ## Configure and run
 
-1. Open **Dashboard → Plugins → Magic Collections**. Paste a  MDBList URL into the blank field. To add more URLs, use the next blank field that appears. Select **Save**. For example:
-   - <https://mdblist.com/lists/garycrawfordgc/top-movies>
-   - <https://mdblist.com/lists/official/movies/popular>
-
-   Use the URL from your browser, not a `/json` export URL. No MDBList account or API key is needed.
-
-   MDBList’s interactive JustWatch charts for movies and shows (`justwatch-streaming-charts`) are unsupported because their JSON export ignores the chart filters. The regular `streaming-charts` source list is supported.
+1. Open **Dashboard → Plugins → Magic Collections**. Paste a [supported list URL](#supported-list-sources) into the blank field. To add more URLs, use the next blank field that appears. Select **Save**.
 2. Open **Dashboard → Scheduled Tasks → Sync Magic Collections**. The default trigger is daily at 03:00 server time. Select **Run now** to run the same task immediately.
 3. If the task fails, check the task result or Jellyfin server log.
 
