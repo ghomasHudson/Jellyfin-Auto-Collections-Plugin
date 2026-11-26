@@ -16,6 +16,11 @@
     <PackageReference Include="Jellyfin.Model" Version="10.11.5">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
+    <!-- Match Jellyfin 10.11.5; the server supplies the managed and native libraries. -->
+    <PackageReference Include="SkiaSharp" Version="3.116.1">
+      <ExcludeAssets>runtime</ExcludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>

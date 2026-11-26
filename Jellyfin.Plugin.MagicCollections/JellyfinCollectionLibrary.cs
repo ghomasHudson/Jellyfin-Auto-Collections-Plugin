@@ -1,14 +1,17 @@
+using System.Net.Mime;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.MagicCollections.Sync;
 using MediaBrowser.Controller.Collections;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
 
 namespace Jellyfin.Plugin.MagicCollections;
 
-internal sealed class JellyfinCollectionLibrary(ILibraryManager library, ICollectionManager collections) : ICollectionLibrary
+internal sealed class JellyfinCollectionLibrary(
+    ILibraryManager library, ICollectionManager collections, IProviderManager providers) : ICollectionLibrary
 {
     public IEnumerable<LibraryMedia> GetMedia()
     {
@@ -51,4 +54,18 @@ internal sealed class JellyfinCollectionLibrary(ILibraryManager library, ICollec
 
     public Task AddMembersAsync(Guid id, IReadOnlyCollection<Guid> memberIds) =>
         collections.AddToCollectionAsync(id, memberIds);
+
+    public async Task EnsurePosterAsync(Guid id, CancellationToken cancellationToken)
+    {
+        if (library.GetItemById(id) is not BoxSet collection || collection.HasImage(ImageType.Primary, 0))
+        {
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        using var poster = CollectionPoster.Render(collection.Name);
+        await providers.SaveImage(collection, poster, MediaTypeNames.Image.Png, ImageType.Primary, null, cancellationToken)
+            .ConfigureAwait(false);
+        await collection.UpdateToRepositoryAsync(ItemUpdateType.ImageUpdate, CancellationToken.None).ConfigureAwait(false);
+    }
 }

@@ -161,6 +161,19 @@ public sealed class MdblistCollectionSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task Leaves_a_managed_collection_without_a_poster_when_its_source_fetch_fails()
+    {
+        const string sourceListUrl = "https://mdblist.com/lists/garycrawfordgc/top-movies";
+        await _library.CreateAsync("Top Movies", $"AutoCollections:{sourceListUrl}");
+        RecordBody(sourceListUrl, Fixture("top-movies.html"));
+        _responses[sourceListUrl + "/json"] = () => new(HttpStatusCode.ServiceUnavailable);
+
+        await Assert.ThrowsAsync<SourceListReadException>(() => SyncSourceListAsync(sourceListUrl));
+
+        Assert.Null(Assert.Single(_library.ManagedCollections).PosterTitle);
+    }
+
+    [Fact]
     public async Task Reports_MDBList_paths_and_non_list_page_URLs_as_unsupported_source_list_URLs()
     {
         string[] sourceListUrls =
