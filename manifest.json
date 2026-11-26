@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/main/logo.png",
     "versions": [
       {
+        "version": "0.2.1.0",
+        "targetAbi": "10.11.5.0",
+        "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.2.1.0/magic-collections-0.2.1.0.zip",
+        "checksum": "65eec97127d24962f095269132876de8",
+        "timestamp": "2026-11-26T18:26:43Z",
+        "changelog": "[Release notes](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.2.1.0)"
+      },
+      {
         "version": "0.2.0.0",
         "targetAbi": "10.11.5.0",
         "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.2.0.0/magic-collections-0.2.0.0.zip",
