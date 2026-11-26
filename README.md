@@ -4,15 +4,35 @@
 
 WIP attempt to take the lessons learned from [Jellyfin-Auto-Collections](https://github.com/ghomasHudson/Jellyfin-Auto-Collections) and turn it into a native jellyfin plugin.
 
-## Install from the Jellyfin catalog
+## Install
 
-In Jellyfin, open **Dashboard → Plugins → Repositories** and add this repository URL:
+1. Open your Jellyfin Web interface.
+2. Go to **Dashboard &rarr; Plugins &rarr; Repositories**.
+3. Click the **➕ Add** button and enter:
+   - **Repository Name:** `Magic Collections`
+   - **Repository URL:**
+     ```text
+     https://raw.githubusercontent.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/main/manifest.json
+     ```
+4. Click **Save**.
+5. Go to the **Catalog** tab, locate **Magic Collections**, and click **Install**.
+6. Restart your Jellyfin server.
 
-```text
-https://raw.githubusercontent.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/main/manifest.json
-```
+## Configure and run
 
-Magic Collections will appear in the plugin catalog after the first compatible release. Install it from there and restart Jellyfin. To try it before the first release, build it locally or use Docker.
+1. Open **Dashboard → Plugins → Magic Collections**. Paste a  MDBList URL into the blank field. To add more URLs, use the next blank field that appears. Select **Save**. For example:
+   - <https://mdblist.com/lists/garycrawfordgc/top-movies>
+   - <https://mdblist.com/lists/official/movies/popular>
+
+   Use the URL from your browser, not a `/json` export URL. No MDBList account or API key is needed.
+
+   MDBList’s interactive JustWatch charts for movies and shows (`justwatch-streaming-charts`) are unsupported because their JSON export ignores the chart filters. The regular `streaming-charts` source list is supported.
+2. Open **Dashboard → Scheduled Tasks → Sync Magic Collections**. The default trigger is daily at 03:00 server time. Select **Run now** to run the same task immediately.
+3. If the task fails, check the task result or Jellyfin server log.
+
+A failed fetch or invalid list response stops the run and reports the source list URL without changing its managed collection. Unsupported URLs are logged and skipped. A valid empty source list is not a fetch error.
+
+# Developers
 
 ## Build and install manually
 
@@ -23,8 +43,6 @@ dotnet test MagicCollections.slnx -c Release
 ```
 
 This builds the plugin and runs the tests. Stop Jellyfin, create a `MagicCollections` directory under the server’s `plugins` directory, and copy `Jellyfin.Plugin.MagicCollections/bin/Release/net9.0/Jellyfin.Plugin.MagicCollections.dll` into it. Start Jellyfin again.
-
-If upgrading from Auto Collections, remove `plugins/AutoCollections/Jellyfin.Plugin.AutoCollections.dll` before restarting Jellyfin. Leave the configuration file in place. Your saved list URLs, sync schedule, and managed collections carry over.
 
 ## Contributing
 
@@ -92,21 +110,7 @@ After editing the plugin, rerun `docker compose up --build -d` to install the re
 - Run `docker compose down` to stop Jellyfin and keep your settings.
 - Run `docker compose down -v` to stop Jellyfin and delete the sandbox's configuration and cache.
 
-## Configure and run
-
-1. Open **Dashboard → Plugins → Magic Collections**. Paste a full public MDBList source list URL into the blank field. To add more URLs, use the next blank field that appears. Select **Save**. For example:
-   - <https://mdblist.com/lists/garycrawfordgc/top-movies>
-   - <https://mdblist.com/lists/official/movies/popular>
-
-   Use the URL from your browser, not a `/json` export URL. No MDBList account or API key is needed.
-
-   MDBList’s interactive JustWatch charts for movies and shows (`justwatch-streaming-charts`) are unsupported because their JSON export ignores the chart filters. The regular `streaming-charts` source list is supported.
-2. Open **Dashboard → Scheduled Tasks → Sync Magic Collections**. The default trigger is daily at 03:00 server time. Select **Run now** to run the same task immediately.
-3. If the task fails, check the task result or Jellyfin server log.
-
-A failed fetch or invalid list response stops the run and reports the source list URL without changing its managed collection. Unsupported URLs are logged and skipped. A valid empty source list is not a fetch error.
-
-## Add a handler
+## Add a new Site
 
 Implement `ISourceListHandler` to recognize a site's URLs and return a `SourceList` with an optional name and entries containing a media type and provider IDs. Register the implementation for `ISourceListHandler` in `ServiceRegistrator`. The handler only reads the source list.
 
