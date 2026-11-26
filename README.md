@@ -20,6 +20,18 @@ Jellyfin plugin to make and update collections based on internet lists such as I
 5. Go to the **Catalog** tab, locate **Magic Collections**, and click **Install**.
 6. Restart your Jellyfin server.
 
+## Setup
+
+1. Open **Dashboard → Plugins → Magic Collections**. Paste a [supported list URL](#supported-list-sources) into the blank field. To add more URLs, use the next blank field that appears. Select **Save**.
+2. Open **Dashboard → Scheduled Tasks → Sync Magic Collections**. The default trigger is daily at 03:00 server time. Select **Run now** to run the same task immediately.
+3. If the task fails, check the task result or Jellyfin server log.
+
+A failed fetch or invalid list response stops the run and reports the source list URL without changing its managed collection. Unsupported URLs are logged and skipped. A valid empty source list is not a fetch error.
+
+Sync gives managed collections without a poster a black poster with the collection name in white. The text uses the server's installed fonts. Existing posters stay as they are after a rename. To use the new name, delete the poster and sync again.
+
+Sync copies the source list’s description into the collection overview and updates it when the description changes. A missing or blank description leaves the overview untouched. Steven Lu’s feeds do not provide list descriptions.
+
 ## Supported list sources
 
 Here are the supported sites and example URLs:
@@ -62,18 +74,6 @@ Follow these issues for the status of other sources from Jellyfin Auto Collectio
 - [Sonarr tags](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/20)
 - [They Shoot Pictures, Don’t They? (TSPDT)](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/17)
 - [Trakt lists and charts](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/15)
-
-## Configure and run
-
-1. Open **Dashboard → Plugins → Magic Collections**. Paste a [supported list URL](#supported-list-sources) into the blank field. To add more URLs, use the next blank field that appears. Select **Save**.
-2. Open **Dashboard → Scheduled Tasks → Sync Magic Collections**. The default trigger is daily at 03:00 server time. Select **Run now** to run the same task immediately.
-3. If the task fails, check the task result or Jellyfin server log.
-
-A failed fetch or invalid list response stops the run and reports the source list URL without changing its managed collection. Unsupported URLs are logged and skipped. A valid empty source list is not a fetch error.
-
-Sync gives managed collections without a poster a black poster with the collection name in white. The text uses the server's installed fonts. Existing posters stay as they are after a rename. To use the new name, delete the poster and sync again.
-
-Sync copies the source list’s description into the collection overview and updates it when the description changes. A missing or blank description leaves the overview untouched. Steven Lu’s feeds do not provide list descriptions.
 
 # Developers
 
