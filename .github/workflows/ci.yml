@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: '9.0.x'
+      - name: Install poster test fonts
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk fonts-dejavu-core
       - name: Run tests in Release mode
         run: dotnet test MagicCollections.slnx -c Release
 

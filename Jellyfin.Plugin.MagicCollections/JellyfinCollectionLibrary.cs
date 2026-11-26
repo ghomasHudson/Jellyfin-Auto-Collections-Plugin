@@ -1,14 +1,17 @@
+using System.Net.Mime;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.MagicCollections.Sync;
 using MediaBrowser.Controller.Collections;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
 
 namespace Jellyfin.Plugin.MagicCollections;
 
-internal sealed class JellyfinCollectionLibrary(ILibraryManager library, ICollectionManager collections) : ICollectionLibrary
+internal sealed class JellyfinCollectionLibrary(
+    ILibraryManager library, ICollectionManager collections, IProviderManager providers) : ICollectionLibrary
 {
     public IEnumerable<LibraryMedia> GetMedia()
     {
@@ -51,4 +54,61 @@ internal sealed class JellyfinCollectionLibrary(ILibraryManager library, ICollec
 
     public Task AddMembersAsync(Guid id, IReadOnlyCollection<Guid> memberIds) =>
         collections.AddToCollectionAsync(id, memberIds);
+
+    public async Task EnsurePosterAsync(Guid id, CancellationToken cancellationToken)
+    {
+        if (library.GetItemById(id) is not BoxSet collection || HasCurrentPoster(collection))
+        {
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        using var poster = CollectionPoster.Render(collection.Name);
+
+        // Jellyfin's SaveImage isn't conditional. Recheck after rendering to narrow the
+        // race with an upload, but another writer can still enter after this check.
+        cancellationToken.ThrowIfCancellationRequested();
+        if (library.GetItemById(id) is not BoxSet current || HasCurrentPoster(current))
+        {
+            return;
+        }
+
+        await providers.SaveImage(current, poster, MediaTypeNames.Image.Png, ImageType.Primary, null, cancellationToken)
+            .ConfigureAwait(false);
+        await current.UpdateToRepositoryAsync(ItemUpdateType.ImageUpdate, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private static bool HasCurrentPoster(BoxSet collection)
+    {
+        var image = collection.GetImageInfo(ImageType.Primary, 0);
+        if (image is null)
+        {
+            return false;
+        }
+
+        var path = image.Path;
+        if (!image.IsLocalFile || !Path.IsPathFullyQualified(path))
+        {
+            return true;
+        }
+
+        try
+        {
+            // File.Exists also returns false for access and I/O errors.
+            _ = File.GetAttributes(path);
+            return true;
+        }
+        catch (FileNotFoundException)
+        {
+            return false;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return false;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return true;
+        }
+    }
 }

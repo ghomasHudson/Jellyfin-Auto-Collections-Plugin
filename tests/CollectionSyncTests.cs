@@ -60,6 +60,35 @@ public class CollectionSyncTests
         Assert.Equal("Festival TV picks 2026", Assert.Single(library.ManagedCollections).Name);
     }
 
+    [Fact]
+    public async Task Gives_a_new_managed_collection_a_poster_with_its_name()
+    {
+        var library = new ControlledLibrary();
+        var entry = new MediaIdentity(SourceMediaType.Movie, new Dictionary<string, string> { ["Tmdb"] = "104" });
+        library.Media.Add(new(Guid.NewGuid(), entry));
+        var sync = new CollectionSync([new TestHandler(new("Festival picks", [entry]))], library);
+
+        await sync.RunAsync(["https://lists.example/festival-picks"], _ => { }, CancellationToken.None);
+
+        Assert.Equal("Festival picks", Assert.Single(library.ManagedCollections).PosterTitle);
+    }
+
+    [Fact]
+    public async Task Backfills_a_renamed_managed_collection_even_when_no_source_list_entries_match()
+    {
+        const string url = "https://lists.example/festival-picks";
+        var library = new ControlledLibrary();
+        var existingId = await library.CreateAsync("My festival", $"AutoCollections:{url}");
+        var unrelatedId = await library.CreateAsync("Other collection", "unrelated");
+        var entry = new MediaIdentity(SourceMediaType.Movie, new Dictionary<string, string> { ["Tmdb"] = "104" });
+        var sync = new CollectionSync([new TestHandler(new("Festival picks", [entry]))], library);
+
+        await sync.RunAsync([url], _ => { }, CancellationToken.None);
+
+        Assert.Equal("My festival", Assert.Single(library.ManagedCollections, c => c.Id == existingId).PosterTitle);
+        Assert.Null(Assert.Single(library.ManagedCollections, c => c.Id == unrelatedId).PosterTitle);
+    }
+
     private sealed class TestHandler(SourceList source) : ISourceListHandler
     {
         public bool Supports(Uri url) => url.Host == "lists.example";

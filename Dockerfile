@@ -1,6 +1,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
+COPY Directory.Build.props ./
 COPY Jellyfin.Plugin.MagicCollections/Jellyfin.Plugin.MagicCollections.csproj Jellyfin.Plugin.MagicCollections/
 RUN dotnet restore Jellyfin.Plugin.MagicCollections
 COPY Jellyfin.Plugin.MagicCollections/ Jellyfin.Plugin.MagicCollections/

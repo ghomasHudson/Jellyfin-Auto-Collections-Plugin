@@ -33,11 +33,15 @@ WIP attempt to take the lessons learned from [Jellyfin-Auto-Collections](https:/
 
 A failed fetch or invalid list response stops the run and reports the source list URL without changing its managed collection. Unsupported URLs are logged and skipped. A valid empty source list is not a fetch error.
 
+Sync gives managed collections without a poster a black poster with the collection name in white. The text uses the server's installed fonts. Existing posters stay as they are after a rename. To use the new name, delete the poster and sync again.
+
 # Developers
 
 ## Build and install manually
 
-The plugin targets Jellyfin Server **10.11.5**. Install the **.NET 9 SDK** (9.0.200 or a newer 9.0 SDK), then run this command from the repository root:
+The plugin targets Jellyfin Server **10.11.5** and uses its SkiaSharp and HarfBuzz libraries. Correct ordering for mixed left-to-right and right-to-left titles requires the operating system's International Components for Unicode (ICU) library, included in the official Jellyfin container.
+
+Install the **.NET 9 SDK**, version 9.0.200 or later in the 9.0 series. On Linux, the poster tests need ICU, Fontconfig, and fonts with Latin, Arabic, and Japanese glyphs (for example, `fonts-dejavu-core` and `fonts-noto-cjk` on Ubuntu). Run this command from the repository root:
 
 ```sh
 dotnet test MagicCollections.slnx -c Release
@@ -108,7 +112,8 @@ The container adds a **Magic Collections Test Movies** library for `/test-media`
 1. Choose a public MDBList containing one of the test movies and check that the scanned item has a matching provider ID.
 2. Open **Dashboard → Plugins → Magic Collections**. Save the full list page URL and reopen the page to confirm it was saved.
 3. Open **Dashboard → Scheduled Tasks → Sync Magic Collections**. Check that it has a daily trigger, then select **Run now**.
-4. Open **Collections** in Jellyfin and check that the managed collection contains your matching item.
+4. Open **Collections** in Jellyfin. Check for the matching item and the black poster with the collection name in white.
+5. Set a custom poster for the collection. Run the task again and confirm it keeps your poster.
 
 After editing the plugin, rerun `docker compose up --build -d` to install the rebuilt DLL.
 

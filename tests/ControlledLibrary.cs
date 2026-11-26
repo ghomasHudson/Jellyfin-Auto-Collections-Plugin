@@ -4,7 +4,10 @@ namespace MagicCollections.Tests;
 
 internal sealed class ControlledLibrary : ICollectionLibrary
 {
-    public sealed record ManagedCollection(Guid Id, string Name, string Tag, List<Guid> Members);
+    public sealed record ManagedCollection(Guid Id, string Name, string Tag, List<Guid> Members)
+    {
+        public string? PosterTitle { get; set; }
+    }
 
     public List<LibraryMedia> Media { get; } = [];
     public List<ManagedCollection> ManagedCollections { get; } = [];
@@ -23,6 +26,13 @@ internal sealed class ControlledLibrary : ICollectionLibrary
     public Task AddMembersAsync(Guid id, IReadOnlyCollection<Guid> memberIds)
     {
         ManagedCollections.Single(c => c.Id == id).Members.AddRange(memberIds);
+        return Task.CompletedTask;
+    }
+
+    public Task EnsurePosterAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var collection = ManagedCollections.Single(c => c.Id == id);
+        collection.PosterTitle ??= collection.Name;
         return Task.CompletedTask;
     }
 }

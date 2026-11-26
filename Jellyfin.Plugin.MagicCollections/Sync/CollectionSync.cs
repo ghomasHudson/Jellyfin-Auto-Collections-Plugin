@@ -22,21 +22,24 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             var list = await handler.ReadAsync(source, cancellationToken).ConfigureAwait(false);
             var matches = list.Items.SelectMany(Keys)
                 .SelectMany(key => media.Value[key]).ToHashSet();
-            if (matches.Count == 0)
-            {
-                continue;
-            }
 
             cancellationToken.ThrowIfCancellationRequested();
             // Keep the persisted tag so existing collections still match their source lists.
             var tag = $"AutoCollections:{source.AbsoluteUri}";
             var existing = library.FindByTag(tag);
+            if (existing is null && matches.Count == 0)
+            {
+                continue;
+            }
+
             var id = existing?.Id ?? await library.CreateAsync(CollectionName(list, source), tag).ConfigureAwait(false);
             matches.ExceptWith(existing?.MemberIds ?? []);
             if (matches.Count != 0)
             {
                 await library.AddMembersAsync(id, matches).ConfigureAwait(false);
             }
+
+            await library.EnsurePosterAsync(id, cancellationToken).ConfigureAwait(false);
         }
     }
 

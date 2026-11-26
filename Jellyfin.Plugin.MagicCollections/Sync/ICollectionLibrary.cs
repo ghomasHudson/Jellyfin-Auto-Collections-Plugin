@@ -10,4 +10,5 @@ public interface ICollectionLibrary
     TaggedCollection? FindByTag(string tag);
     Task<Guid> CreateAsync(string name, string tag);
     Task AddMembersAsync(Guid id, IReadOnlyCollection<Guid> memberIds);
+    Task EnsurePosterAsync(Guid id, CancellationToken cancellationToken);
 }
