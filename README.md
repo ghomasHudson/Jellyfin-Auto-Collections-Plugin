@@ -98,9 +98,13 @@ docker compose up --build -d
 
 To keep an existing Auto Collections sandbox and its data, run `docker compose -p autocollections-dev up --build -d`. Use `-p autocollections-dev` with any later Compose commands for that sandbox.
 
-Open <http://localhost:8097> and complete the Jellyfin setup wizard. If port 8097 is in use, set `JELLYFIN_TEST_PORT` to a free port before starting Compose.
+Open <http://localhost:8097>. On a fresh sandbox, Docker completes the setup wizard automatically. Sign in as `admin` with the password `magiccollections-test`. If you're reusing a sandbox, keep using your existing login. The default credentials are for local testing only; don't expose this sandbox to the network.
 
-1. Bind-mount a test media directory into the container and add it as a Jellyfin library. Include a movie or series from the public MDBList you want to try, and check that the Jellyfin item has a matching provider ID (TMDb, IMDb, or TVDb).
+If port 8097 is in use, set `JELLYFIN_TEST_PORT` to a free port before starting Compose.
+
+The container adds a **Magic Collections Test Movies** library for `/test-media` unless a library already uses that path. It contains zero-byte placeholders for The Matrix, Inception, and Tenet. They can be scanned and matched, but not played. Jellyfin scans them automatically on a fresh sandbox. If you reuse an existing sandbox and the titles don't appear, select **Scan All Libraries** on the dashboard.
+
+1. Choose a public MDBList containing one of the test movies and check that the scanned item has a matching provider ID.
 2. Open **Dashboard → Plugins → Magic Collections**. Save the full list page URL and reopen the page to confirm it was saved.
 3. Open **Dashboard → Scheduled Tasks → Sync Magic Collections**. Check that it has a daily trigger, then select **Run now**.
 4. Open **Collections** in Jellyfin and check that the managed collection contains your matching item.
