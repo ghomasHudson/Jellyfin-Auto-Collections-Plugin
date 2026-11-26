@@ -2,19 +2,68 @@
 <html lang="en">
 <head><meta charset="utf-8"><title>Auto Collections</title></head>
 <body>
-    <div id="autoCollectionsPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button,emby-textarea">
-        <div data-role="content"><div class="content-primary">
-            <form>
-                <label for="autoCollectionsUrls">Source list URLs (one per line)</label>
-                <textarea id="autoCollectionsUrls" is="emby-textarea" rows="8"></textarea>
-                <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
-            </form>
-        </div></div>
+    <div id="autoCollectionsPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button,emby-input">
+        <style>
+            #autoCollectionsUrls > .inputContainer:not(:last-child) {
+                margin-bottom: .6em;
+            }
+            #autoCollectionsUrls .inputLabel {
+                display: none;
+            }
+        </style>
+        <div data-role="content">
+            <div class="content-primary">
+                <h1>Auto Collections</h1>
+                <form>
+                    <h3 id="autoCollectionsUrlsHeading">Source list URLs</h3>
+                    <p class="fieldDescription">Add URLs for list sources. Must be a list source supported by the plugin.</p>
+                    <div id="autoCollectionsUrls" role="group" aria-labelledby="autoCollectionsUrlsHeading"></div>
+                    <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
+                </form>
+                <template id="autoCollectionsUrlRow">
+                    <div class="inputContainer">
+                        <input is="emby-input" type="text" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://mdblist.com/lists/snoak/latest-movies-digital-release" />
+                    </div>
+                </template>
+            </div>
+        </div>
         <script>
             (() => {
                 const pluginId = '3290c5ef-9e20-4cdf-ab34-87e9021bcc34';
                 const page = document.querySelector('#autoCollectionsPage');
-                const urls = page.querySelector('textarea');
+                const form = page.querySelector('form');
+                const urls = page.querySelector('#autoCollectionsUrls');
+                const template = page.querySelector('#autoCollectionsUrlRow');
+
+                function urlLabel(index) {
+                    return `Source list URL ${index + 1}`;
+                }
+
+                function addUrl(value = '') {
+                    const row = template.content.firstElementChild.cloneNode(true);
+                    const input = row.querySelector('input');
+                    input.setAttribute('aria-label', urlLabel(urls.children.length));
+                    input.value = value;
+                    input.addEventListener('input', () => {
+                        if (row === urls.lastElementChild && input.value.trim()) {
+                            addUrl();
+                        }
+                    });
+                    input.addEventListener('blur', () => {
+                        if (row !== urls.lastElementChild && !input.value.trim()) {
+                            row.remove();
+                            urls.querySelectorAll('input').forEach((field, index) => field.setAttribute('aria-label', urlLabel(index)));
+                        }
+                    });
+                    urls.appendChild(row);
+                }
+
+                function renderUrls(values) {
+                    urls.textContent = '';
+                    values.forEach(url => addUrl(url));
+                    addUrl();
+                }
+
                 async function withConfiguration(action) {
                     Dashboard.showLoadingMsg();
                     try {
@@ -26,13 +75,16 @@
                 }
 
                 page.addEventListener('pageshow', () => withConfiguration(config => {
-                    urls.value = (config.SourceUrls || []).join('\n');
+                    renderUrls(config.SourceUrls || []);
                 }));
-                page.querySelector('form').addEventListener('submit', event => {
+                // Keep Save from moving between pressing and releasing the mouse.
+                form.querySelector('button[type="submit"]').addEventListener('mousedown', event => event.preventDefault());
+                form.addEventListener('submit', event => {
                     event.preventDefault();
                     return withConfiguration(async config => {
-                        config.SourceUrls = urls.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+                        config.SourceUrls = Array.from(urls.querySelectorAll('input'), input => input.value.trim()).filter(Boolean);
                         const result = await ApiClient.updatePluginConfiguration(pluginId, config);
+                        renderUrls(config.SourceUrls);
                         Dashboard.processPluginConfigurationUpdateResult(result);
                     });
                 });
