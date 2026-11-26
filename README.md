@@ -14,6 +14,25 @@ dotnet test AutoCollections.slnx -c Release
 
 This builds the plugin and runs the tests. Stop Jellyfin, create an `AutoCollections` directory under the server’s `plugins` directory, and copy `Jellyfin.Plugin.AutoCollections/bin/Release/net9.0/Jellyfin.Plugin.AutoCollections.dll` into it. Start Jellyfin again.
 
+## Try the plugin in Docker
+
+Run this from the repository root. Docker Compose builds the plugin and starts Jellyfin 10.11.5 in a separate container.
+
+```sh
+docker compose up --build -d
+```
+
+Open <http://localhost:8097> and complete the Jellyfin setup wizard. You can skip adding a media library. If port 8097 is in use, set `JELLYFIN_TEST_PORT` to a free port before starting Compose.
+
+1. Open **Dashboard → Plugins → Auto Collections**. Save `https://example.com/test-list` and reopen the page to check that the URL is still there.
+2. Open **Dashboard → Scheduled Tasks → Sync Auto Collections** and run the task.
+3. Run `docker compose logs jellyfin` and look for `Unsupported source list URL: https://example.com/test-list`. This confirms the task reads the saved URL. No collection is created because this version has no live source list handler.
+
+After editing the plugin, rerun `docker compose up --build -d` to install the rebuilt DLL.
+
+- Run `docker compose down` to stop Jellyfin and keep your settings.
+- Run `docker compose down -v` to stop Jellyfin and delete the sandbox's configuration and cache.
+
 ## Configure and run
 
 1. Open **Dashboard → Plugins → Auto Collections**. Enter one source list URL per line and select **Save**. Reopen the page to see the saved list.

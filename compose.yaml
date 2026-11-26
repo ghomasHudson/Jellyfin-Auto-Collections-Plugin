@@ -1,0 +1,13 @@
+name: autocollections-dev
+services:
+  jellyfin:
+    build: .
+    ports:
+      - "127.0.0.1:${JELLYFIN_TEST_PORT:-8097}:8096"
+    volumes:
+      - config:/config
+      - cache:/cache
+
+volumes:
+  config:
+  cache:
