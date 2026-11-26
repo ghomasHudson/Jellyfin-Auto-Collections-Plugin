@@ -6,6 +6,15 @@
     "description": "Sync public movie and TV lists to managed collections in your Jellyfin library.",
     "owner": "ghomasHudson",
     "category": "General",
-    "versions": []
+    "versions": [
+      {
+        "version": "0.1.1.0",
+        "targetAbi": "10.11.5.0",
+        "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.1.1.0/magic-collections-0.1.1.0.zip",
+        "checksum": "288f168cc221b82045ce0af3c46b4d25",
+        "timestamp": "2026-11-26T14:16:59Z",
+        "changelog": "[Release notes](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.1.1.0)"
+      }
+    ]
   }
 ]
