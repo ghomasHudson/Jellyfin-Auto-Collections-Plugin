@@ -20,6 +20,14 @@
                     <div id="magicCollectionsUrls" role="group" aria-labelledby="magicCollectionsUrlsHeading"></div>
                     <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
                 </form>
+                <section aria-labelledby="magicCollectionsLetterboxdHeading">
+                    <h3 id="magicCollectionsLetterboxdHeading">Letterboxd</h3>
+                    <p class="fieldDescription">Clear saved film IDs. The next sync will fetch them again from Letterboxd.</p>
+                    <button id="magicCollectionsClearLetterboxd" is="emby-button" type="button" class="raised block">
+                        <span>Clear Letterboxd cache</span>
+                    </button>
+                    <p id="magicCollectionsLetterboxdStatus" role="status"></p>
+                </section>
                 <template id="magicCollectionsUrlRow">
                     <div class="inputContainer">
                         <input is="emby-input" type="text" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://mdblist.com/lists/snoak/latest-movies-digital-release" />
@@ -34,6 +42,8 @@
                 const form = page.querySelector('form');
                 const urls = page.querySelector('#magicCollectionsUrls');
                 const template = page.querySelector('#magicCollectionsUrlRow');
+                const clearLetterboxd = page.querySelector('#magicCollectionsClearLetterboxd');
+                const letterboxdStatus = page.querySelector('#magicCollectionsLetterboxdStatus');
 
                 function urlLabel(index) {
                     return `Source list URL ${index + 1}`;
@@ -87,6 +97,21 @@
                         renderUrls(config.SourceUrls);
                         Dashboard.processPluginConfigurationUpdateResult(result);
                     });
+                });
+                clearLetterboxd.addEventListener('click', async () => {
+                    clearLetterboxd.disabled = true;
+                    letterboxdStatus.textContent = 'Clearing the Letterboxd cache…';
+                    try {
+                        await ApiClient.ajax({
+                            type: 'DELETE',
+                            url: ApiClient.getUrl('MagicCollections/LetterboxdCache')
+                        });
+                        letterboxdStatus.textContent = 'Letterboxd cache cleared.';
+                    } catch {
+                        letterboxdStatus.textContent = 'Could not clear the Letterboxd cache. Check the Jellyfin server log.';
+                    } finally {
+                        clearLetterboxd.disabled = false;
+                    }
                 });
             })();
         </script>

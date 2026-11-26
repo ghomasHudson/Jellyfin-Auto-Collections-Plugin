@@ -6,7 +6,7 @@ using AngleSharp.Html.Parser;
 
 namespace Jellyfin.Plugin.MagicCollections.Sync;
 
-public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
+public sealed class LetterboxdHandler(HttpClient http, string dataPath) : ISourceListHandler
 {
     private const string Origin = "https://letterboxd.com";
     private static readonly Regex ListPath = new(@"\A/[a-z0-9_]+/list/[a-z0-9_-]+/?\z", RegexOptions.NonBacktracking);
@@ -18,12 +18,15 @@ public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
         @"\AA list of ([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+) films? compiled on Letterboxd(?:[,.]|\z)",
         RegexOptions.NonBacktracking);
     private const string ListContent = "main#content .col-main";
+    private readonly LetterboxdFilmCache _cache = new(dataPath);
 
     public bool Supports(Uri url) => url.IsAbsoluteUri && url.OriginalString == Origin + url.AbsolutePath &&
         ListPath.IsMatch(url.AbsolutePath);
 
     public Uri GetCanonicalUrl(Uri url) =>
         Supports(url) && !url.AbsolutePath.EndsWith('/') ? new Uri(url.AbsoluteUri + "/") : url;
+
+    internal Task ClearCacheAsync(CancellationToken cancellationToken) => _cache.ClearAsync(cancellationToken);
 
     public async Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken)
     {
@@ -37,20 +40,27 @@ public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
         var items = new List<MediaIdentity>();
         foreach (var filmPath in filmPaths)
         {
-            var film = await FetchPageAsync(url, filmPath, cancellationToken).ConfigureAwait(false);
-            if (!IsPage(film, filmPath) || film.Body?.GetAttribute("data-type") != "film" ||
-                film.QuerySelector("main#content #film-page-wrapper h1.primaryname") is null)
-            {
-                throw InvalidPage(url, filmPath, "expected the film details page");
-            }
-
-            if (ReadIdentity(film) is { } identity)
+            var identity = await _cache.ReadOrFetchAsync(filmPath,
+                () => FetchIdentityAsync(url, filmPath, cancellationToken), cancellationToken).ConfigureAwait(false);
+            if (identity is not null)
             {
                 items.Add(identity);
             }
         }
 
         return new(name, items, description);
+    }
+
+    private async Task<MediaIdentity?> FetchIdentityAsync(Uri source, string filmPath, CancellationToken cancellationToken)
+    {
+        var film = await FetchPageAsync(source, filmPath, cancellationToken).ConfigureAwait(false);
+        if (!IsPage(film, filmPath) || film.Body?.GetAttribute("data-type") != "film" ||
+            film.QuerySelector("main#content #film-page-wrapper h1.primaryname") is null)
+        {
+            throw InvalidPage(source, filmPath, "expected the film details page");
+        }
+
+        return ReadIdentity(film);
     }
 
     private async Task<(string Name, string? Description, List<string> FilmPaths)> ReadListPagesAsync(

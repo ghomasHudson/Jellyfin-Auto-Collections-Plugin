@@ -1,5 +1,7 @@
 using System.Net;
+using Jellyfin.Plugin.MagicCollections.Api;
 using Jellyfin.Plugin.MagicCollections.Sync;
+using Microsoft.AspNetCore.Mvc;
 using Xunit;
 
 namespace MagicCollections.Tests;
@@ -13,13 +15,16 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
     private const string MovieProviderLink = """<a href="https://www.themoviedb.org/movie/496243/" class="micro-button track-event" data-track-action="TMDB">TMDB</a>""";
     private readonly ControlledLibrary _library = new();
     private readonly RecordedHttpResponses _responses = new();
+    private readonly string _dataPath = Path.Combine(Path.GetTempPath(), $"magic-collections-tests-{Guid.NewGuid():N}");
+    private readonly LetterboxdHandler _handler;
     private readonly HttpClient _http;
     private readonly CollectionSync _sync;
 
     public LetterboxdCollectionSyncTests()
     {
         _http = new HttpClient(_responses);
-        _sync = new CollectionSync([new LetterboxdHandler(_http)], _library);
+        _handler = new LetterboxdHandler(_http, _dataPath);
+        _sync = new CollectionSync([_handler], _library);
     }
 
     [Theory]
@@ -173,6 +178,93 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
         Assert.Equal([ListUrl, Origin + pageTwo, Origin + MoviePath], _responses.Requests);
     }
 
+    [Fact]
+    public async Task Reuses_film_IDs_after_a_restart_and_across_lists_but_fetches_new_entries()
+    {
+        const string otherList = "/alex_test/list/new_films/";
+        const string seriesPath = "/film/the-example-series/";
+        RecordHtml(ListPath, ListPage(ListPath, 1, Poster(0, MoviePath)));
+        RecordHtml(MoviePath, Fixture("letterboxd-movie.html"));
+        var movie = AddMedia(SourceMediaType.Movie, "Imdb", "tt6751668");
+        await SyncListAsync();
+
+        var cachedFilm = Assert.Single(Directory.GetFiles(_dataPath, "*.json", SearchOption.AllDirectories));
+        File.SetLastWriteTimeUtc(cachedFilm, DateTime.UnixEpoch);
+        RecordHtml(ListPath, ListPage(ListPath, 2, Poster(0, MoviePath) + Poster(1, seriesPath)));
+        RecordHtml(otherList, ListPage(otherList, 1, Poster(0, MoviePath)));
+        RecordHtml(seriesPath, Fixture("letterboxd-series.html"));
+        var series = AddMedia(SourceMediaType.Series, "Tmdb", "87108");
+
+        var restartedSync = new CollectionSync([new LetterboxdHandler(_http, _dataPath)], _library);
+        await restartedSync.RunAsync([ListUrl, Origin + otherList], ReportUnexpected, CancellationToken.None);
+
+        Assert.Equal([ListUrl, Origin + MoviePath, ListUrl, Origin + seriesPath, Origin + otherList], _responses.Requests);
+        Assert.Equal([movie, series], _library.ManagedCollections.Single(c => c.Tag == $"AutoCollections:{ListUrl}").Members);
+        Assert.Equal([movie], _library.ManagedCollections.Single(c => c.Tag == $"AutoCollections:{Origin + otherList}").Members);
+    }
+
+    [Fact]
+    public async Task Clearing_the_cache_leaves_the_collection_untouched_and_fetches_fresh_film_IDs_on_the_next_sync()
+    {
+        var controller = new LetterboxdCacheController(_handler);
+        Assert.IsType<NoContentResult>(await controller.ClearLetterboxdCache(CancellationToken.None));
+        RecordHtml(ListPath, ListPage(ListPath, 1, Poster(0, MoviePath)));
+        var moviePage = Fixture("letterboxd-movie.html");
+        RecordHtml(MoviePath, moviePage);
+        var movie = AddMedia(SourceMediaType.Movie, "Tmdb", "496243");
+        var correctedMatch = AddMedia(SourceMediaType.Movie, "Tmdb", "12345");
+        await SyncListAsync();
+
+        // A different source's cache must survive the Letterboxd-only clear.
+        var otherCache = Path.Combine(_dataPath, "magic-collections", "other-source.json");
+        File.WriteAllText(otherCache, "{}");
+        RecordHtml(MoviePath, moviePage.Replace("/movie/496243/", "/movie/12345/"));
+        Assert.IsType<NoContentResult>(await controller.ClearLetterboxdCache(CancellationToken.None));
+
+        var collection = Assert.Single(_library.ManagedCollections);
+        Assert.Equal([movie], collection.Members);
+        Assert.True(File.Exists(otherCache));
+        Assert.Equal([ListUrl, Origin + MoviePath], _responses.Requests);
+
+        await SyncListAsync();
+
+        Assert.Equal([movie, correctedMatch], collection.Members);
+        Assert.Equal([ListUrl, Origin + MoviePath, ListUrl, Origin + MoviePath], _responses.Requests);
+    }
+
+    [Fact]
+    public async Task Refetches_a_corrupt_cached_film()
+    {
+        RecordHtml(ListPath, ListPage(ListPath, 1, Poster(0, MoviePath)));
+        RecordHtml(MoviePath, Fixture("letterboxd-movie.html"));
+        await SyncListAsync();
+        var cachedFilm = Assert.Single(Directory.GetFiles(_dataPath, "*.json", SearchOption.AllDirectories));
+        File.WriteAllText(cachedFilm, "{");
+
+        var movie = AddMedia(SourceMediaType.Movie, "Tmdb", "496243");
+        await SyncListAsync();
+
+        Assert.Equal([movie], Assert.Single(_library.ManagedCollections).Members);
+        Assert.Equal([ListUrl, Origin + MoviePath, ListUrl, Origin + MoviePath], _responses.Requests);
+    }
+
+    [Fact]
+    public async Task Retries_a_film_without_verified_IDs_on_the_next_sync()
+    {
+        RecordHtml(ListPath, ListPage(ListPath, 1, Poster(0, MoviePath)));
+        var moviePage = Fixture("letterboxd-movie.html");
+        RecordHtml(MoviePath, moviePage.Replace(MovieProviderLink, ""));
+        var movie = AddMedia(SourceMediaType.Movie, "Tmdb", "496243");
+        await SyncListAsync();
+        Assert.Empty(_library.ManagedCollections);
+
+        RecordHtml(MoviePath, moviePage);
+        await SyncListAsync();
+
+        Assert.Equal([movie], Assert.Single(_library.ManagedCollections).Members);
+        Assert.Equal([ListUrl, Origin + MoviePath, ListUrl, Origin + MoviePath], _responses.Requests);
+    }
+
     [Theory]
     [InlineData("private list")]
     [InlineData("challenge")]
@@ -290,9 +382,14 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
                 _responses.Record(Origin + failingFilmPath, () => throw new HttpRequestException("Connection failed."));
                 break;
         }
-        AddMedia(SourceMediaType.Movie, "Tmdb", "496243");
+        var movie = AddMedia(SourceMediaType.Movie, "Tmdb", "496243");
 
         await AssertFailedWithoutChangesAsync();
+        RecordHtml(failingFilmPath, failingPage);
+        await SyncListAsync();
+
+        Assert.Contains(movie, Assert.Single(_library.ManagedCollections).Members);
+        Assert.Equal([ListUrl, Origin + MoviePath, Origin + failingFilmPath, ListUrl, Origin + failingFilmPath], _responses.Requests);
     }
 
     [Fact]
@@ -389,7 +486,14 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
         await AssertFailedWithoutChangesAsync();
     }
 
-    public void Dispose() => _http.Dispose();
+    public void Dispose()
+    {
+        _http.Dispose();
+        if (Directory.Exists(_dataPath))
+        {
+            Directory.Delete(_dataPath, recursive: true);
+        }
+    }
 
     private Task SyncListAsync() =>
         _sync.RunAsync([ListUrl], ReportUnexpected, CancellationToken.None);

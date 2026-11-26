@@ -51,6 +51,8 @@ Use a public custom list URL in the form `https://letterboxd.com/<member>/list/<
 
 The plugin reads the public list and film pages without signing in or calling an API. A film page must link to a TMDb movie or series to establish its media type. Jellyfin can then match by TMDb or IMDb ID, never by title alone. If a page is blocked or incomplete, the plugin leaves the managed collection unchanged.
 
+The plugin fetches list pages on every sync. It saves verified film IDs and reuses them across lists and server restarts. These IDs do not expire. To fetch them again, select **Clear Letterboxd cache** in the Magic Collections settings before running a sync. This leaves your source lists and collections unchanged. If a film request fails or the page has no verified IDs, the next sync tries again.
+
 ### Not yet supported
 
 Follow these issues for the status of other sources from Jellyfin Auto Collections:
