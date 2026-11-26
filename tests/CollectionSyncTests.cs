@@ -37,7 +37,7 @@ public class CollectionSyncTests
             var unsupported = new List<string>();
             await sync.RunAsync([unsupportedUrl, supportedUrl], unsupported.Add, CancellationToken.None);
             Assert.Equal([unsupportedUrl], unsupported);
-            var collection = Assert.Single(library.Collections);
+            var collection = Assert.Single(library.ManagedCollections);
             Assert.Equal("Festival picks", collection.Name);
             Assert.Equal("AutoCollections:https://lists.example/festival-picks", collection.Tag);
             Assert.Equal([movie], collection.Members);
@@ -57,37 +57,12 @@ public class CollectionSyncTests
 
         await sync.RunAsync(["https://lists.example/lists/Festival%20TV-picks_2026/?lang=en"], _ => { }, CancellationToken.None);
 
-        Assert.Equal("Festival TV picks 2026", Assert.Single(library.Collections).Name);
+        Assert.Equal("Festival TV picks 2026", Assert.Single(library.ManagedCollections).Name);
     }
 
     private sealed class TestHandler(SourceList source) : ISourceListHandler
     {
         public bool Supports(Uri url) => url.Host == "lists.example";
         public Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken) => Task.FromResult(source);
-    }
-
-    private sealed record Collection(Guid Id, string Name, string Tag, List<Guid> Members);
-
-    private sealed class ControlledLibrary : ICollectionLibrary
-    {
-        public List<LibraryMedia> Media { get; } = [];
-        public List<Collection> Collections { get; } = [];
-
-        public IEnumerable<LibraryMedia> GetMedia() => Media;
-        public TaggedCollection? FindByTag(string tag) => Collections.SingleOrDefault(c => c.Tag == tag) is { } c
-            ? new(c.Id, c.Members.ToArray()) : null;
-
-        public Task<Guid> CreateAsync(string name, string tag)
-        {
-            var collection = new Collection(Guid.NewGuid(), name, tag, []);
-            Collections.Add(collection);
-            return Task.FromResult(collection.Id);
-        }
-
-        public Task AddMembersAsync(Guid id, IReadOnlyCollection<Guid> memberIds)
-        {
-            Collections.Single(c => c.Id == id).Members.AddRange(memberIds);
-            return Task.CompletedTask;
-        }
     }
 }
