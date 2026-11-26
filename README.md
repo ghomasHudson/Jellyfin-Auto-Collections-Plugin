@@ -21,12 +21,30 @@ WIP attempt to take the lessons learned from [Jellyfin-Auto-Collections](https:/
 
 ## Supported list sources
 
-**MDBList is the only supported site right now.** Use the URL from your browser, not a `/json` export URL. No account or API key is needed. The plugin supports public user lists and official movie and show lists, for example:
+### MDBList
+
+Use the URL from your browser, not a `/json` export URL. No account or API key is needed. The plugin supports public user lists and official movie and show lists, for example:
 
 - <https://mdblist.com/lists/garycrawfordgc/top-movies>
 - <https://mdblist.com/lists/official/movies/popular>
 
 The regular `streaming-charts` list works. The interactive JustWatch charts (`justwatch-streaming-charts`) do not, because their JSON export ignores the chart filters.
+
+### Steven Lu’s Popular Movies
+
+Paste a direct HTTPS feed URL. The feeds are public.
+
+- Popular movies: <https://popular-movies-data.stevenlu.com/movies.json>
+- All movies: <https://popular-movies-data.stevenlu.com/all-movies.json>
+- Metacritic: <https://popular-movies-data.stevenlu.com/movies-metacritic-min70.json>
+- IMDb: <https://popular-movies-data.stevenlu.com/movies-imdb-min7.json>
+- Rotten Tomatoes: <https://popular-movies-data.stevenlu.com/movies-rottentomatoes-min80.json>
+
+Metacritic and Rotten Tomatoes offer minimum scores of 50, 60, 70, and 80. IMDb offers 5, 6, 7, and 8. Use the exact host and documented path without a port, query string, or fragment. The plugin rejects historical snapshots and does not follow redirects.
+
+The feeds roll over nightly. The sync task matches movies by IMDb or TMDb ID, adds missing matches, and keeps existing members even if they drop off the feed.
+
+The plugin fetches each feed at most once every 24 hours while Jellyfin is running. Between fetches, hourly triggers and **Run now** use the cached feed to match new library items or report the same error if the last fetch failed. Removing and re-adding a URL does not reset the timer, but restarting Jellyfin clears the cache. This limit applies only to Steven Lu’s feeds.
 
 ### Not yet supported
 
@@ -40,7 +58,6 @@ Follow these issues for the status of other sources from Jellyfin Auto Collectio
 - [ListMania](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/12)
 - [Radarr tags](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/19)
 - [Sonarr tags](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/20)
-- [Steven Lu’s Popular Movies](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/11)
 - [They Shoot Pictures, Don’t They? (TSPDT)](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/17)
 - [Trakt lists and charts](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/15)
 
