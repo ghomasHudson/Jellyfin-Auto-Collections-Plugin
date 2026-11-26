@@ -1,15 +1,12 @@
-using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json;
 
 namespace Jellyfin.Plugin.MagicCollections.Sync;
 
-public sealed class PopularMoviesHandler(HttpClient http, TimeProvider timeProvider) : ISourceListHandler
+public sealed class PopularMoviesHandler(HttpClient http, TimeProvider timeProvider, string dataPath) : ISourceListHandler
 {
     private const string Host = "popular-movies-data.stevenlu.com";
     private const string Origin = "https://" + Host;
-    private static readonly TimeSpan PollInterval = TimeSpan.FromDays(1);
-
     private static readonly IReadOnlyDictionary<string, string> FeedNames = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["/movies.json"] = "Steven Lu Popular Movies",
@@ -28,36 +25,24 @@ public sealed class PopularMoviesHandler(HttpClient http, TimeProvider timeProvi
         ["/movies-rottentomatoes-min80.json"] = "Steven Lu Movies (Rotten Tomatoes 80+)"
     };
 
-    private readonly ConcurrentDictionary<string, FeedPoll> _polls = new(StringComparer.Ordinal);
+    private readonly PopularMoviesFeedCache _cache = new(dataPath, timeProvider);
 
     public bool Supports(Uri url) => FeedName(url) is not null;
 
-    public Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken)
+    public async Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken)
     {
         var name = FeedName(url) ?? throw new ArgumentException("Not a Steven Lu Popular Movies feed URL.", nameof(url));
-        cancellationToken.ThrowIfCancellationRequested();
-        var poll = _polls.GetOrAdd(url.AbsolutePath, static _ => new());
-        Task<SourceList> result;
-        lock (poll)
-        {
-            // Reuse success and failure alike. An aborted sync stops waiting, but must not open a retry window.
-            if (poll.Result is null || (poll.Result.IsCompleted && timeProvider.GetElapsedTime(poll.StartedAt) >= PollInterval))
-            {
-                poll.StartedAt = timeProvider.GetTimestamp();
-                poll.Result = FetchAsync(new Uri(Origin + url.AbsolutePath), name);
-            }
-            result = poll.Result;
-        }
-
-        return result.WaitAsync(cancellationToken);
+        var canonicalUrl = new Uri(Origin + url.AbsolutePath);
+        var items = await _cache.ReadAsync(canonicalUrl, FetchAsync, cancellationToken).ConfigureAwait(false);
+        return new(name, items);
     }
 
-    private async Task<SourceList> FetchAsync(Uri url, string name)
+    private async Task<IReadOnlyList<MediaIdentity>> FetchAsync(Uri url)
     {
         try
         {
             var json = await http.GetStringAsync(url).ConfigureAwait(false);
-            return new(name, ReadItems(json));
+            return ReadItems(json);
         }
         catch (Exception exception) when (exception is HttpRequestException or IOException)
         {
@@ -89,28 +74,29 @@ public sealed class PopularMoviesHandler(HttpClient http, TimeProvider timeProvi
                 throw new JsonException("Expected a movie object.");
             }
 
-            var ids = new Dictionary<string, string>();
-            if (entry.TryGetProperty("imdb_id", out var imdb) && imdb.ValueKind != JsonValueKind.Null)
+            JsonElement imdb = default, tmdb = default;
+            foreach (var property in entry.EnumerateObject())
             {
-                if (imdb.ValueKind != JsonValueKind.String)
+                if (property.NameEquals("imdb_id"))
                 {
-                    throw new JsonException("Expected an IMDb ID string.");
+                    ReadProviderField(property, ref imdb);
                 }
-                if (imdb.GetString() is { Length: > 0 } id)
+                else if (property.NameEquals("tmdb_id"))
                 {
-                    if (id.Length < 3 || !id.StartsWith("tt", StringComparison.Ordinal) ||
-                        id.AsSpan(2).ContainsAnyExceptInRange('0', '9'))
-                    {
-                        throw new JsonException("Expected an IMDb ID starting with 'tt' followed by digits.");
-                    }
-                    ids["Imdb"] = id;
+                    ReadProviderField(property, ref tmdb);
                 }
             }
-            if (entry.TryGetProperty("tmdb_id", out var tmdb) && tmdb.ValueKind != JsonValueKind.Null)
+
+            var ids = new Dictionary<string, string>();
+            if (ImdbId.ReadOptional(imdb, minimumDigits: 7) is { } imdbId)
             {
-                if (tmdb.ValueKind != JsonValueKind.Number || !tmdb.TryGetInt64(out var id) || id <= 0)
+                ids["Imdb"] = imdbId;
+            }
+            if (tmdb.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null))
+            {
+                if (tmdb.ValueKind != JsonValueKind.Number || !tmdb.TryGetInt32(out var id) || id <= 0)
                 {
-                    throw new JsonException("Expected a positive integer TMDb ID.");
+                    throw new JsonException("Expected a positive 32-bit integer TMDb ID.");
                 }
                 ids["Tmdb"] = id.ToString(CultureInfo.InvariantCulture);
             }
@@ -123,6 +109,15 @@ public sealed class PopularMoviesHandler(HttpClient http, TimeProvider timeProvi
         return items;
     }
 
+    private static void ReadProviderField(JsonProperty property, ref JsonElement field)
+    {
+        if (field.ValueKind != JsonValueKind.Undefined)
+        {
+            throw new JsonException($"Duplicate provider ID field '{property.Name}'.");
+        }
+        field = property.Value;
+    }
+
     private static string? FeedName(Uri url)
     {
         // Check the original spelling of the path too: Uri normalizes dot segments, escapes and backslashes.
@@ -130,11 +125,5 @@ public sealed class PopularMoviesHandler(HttpClient http, TimeProvider timeProvi
             url.OriginalString.StartsWith(Origin, StringComparison.OrdinalIgnoreCase) &&
             url.OriginalString.AsSpan(Origin.Length).SequenceEqual(url.AbsolutePath) &&
             FeedNames.TryGetValue(url.AbsolutePath, out var name) ? name : null;
-    }
-
-    private sealed class FeedPoll
-    {
-        public long StartedAt { get; set; }
-        public Task<SourceList>? Result { get; set; }
     }
 }

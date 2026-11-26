@@ -1,5 +1,6 @@
 using System.Net;
 using Jellyfin.Plugin.MagicCollections.Sync;
+using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,7 +16,8 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ISourceListHandler>(services =>
             new MdblistHandler(services.GetRequiredService<SourceListHttpClient>()));
         serviceCollection.AddSingleton<ISourceListHandler>(services =>
-            new PopularMoviesHandler(services.GetRequiredService<SourceListHttpClient>(), TimeProvider.System));
+            new PopularMoviesHandler(services.GetRequiredService<SourceListHttpClient>(), TimeProvider.System,
+                services.GetRequiredService<IApplicationPaths>().DataPath));
         serviceCollection.AddSingleton<ICollectionLibrary, JellyfinCollectionLibrary>();
         serviceCollection.AddSingleton<CollectionSync>();
     }

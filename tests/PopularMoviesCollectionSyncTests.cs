@@ -1,6 +1,7 @@
 using System.Net;
 using Jellyfin.Plugin.MagicCollections;
 using Jellyfin.Plugin.MagicCollections.Sync;
+using MediaBrowser.Common.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -11,8 +12,9 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
     private const string Origin = "https://popular-movies-data.stevenlu.com";
     private const string PopularFeed = Origin + "/movies.json";
     private readonly ControlledLibrary _library = new();
-    private readonly FeedResponses _responses = new();
+    private readonly RecordedHttpResponses _responses = new();
     private readonly TestClock _clock = new();
+    private readonly string _dataPath = Path.Combine(Path.GetTempPath(), $"magic-collections-tests-{Guid.NewGuid():N}");
     private readonly HttpClient _http;
     private readonly CollectionSync _sync;
 
@@ -26,6 +28,7 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
     public void Registers_a_Popular_Movies_handler_without_replacing_the_MDBList_handler()
     {
         var services = new ServiceCollection();
+        services.AddSingleton<IApplicationPaths>(new TestApplicationPaths(_dataPath));
         new ServiceRegistrator().RegisterServices(services, null!);
         using var provider = services.BuildServiceProvider();
 
@@ -37,22 +40,22 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task Syncs_a_recorded_feed_by_Imdb_and_Tmdb_but_does_not_match_a_same_title_with_the_wrong_ID()
+    public async Task Syncs_a_recorded_source_list_by_Imdb_and_Tmdb_and_ignores_the_wrong_provider_ID()
     {
         // The first three entries from movies.json on 2026-11-26 (UTC).
         RecordBody(PopularFeed, File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "steven-lu-movies.json")));
-        var imdbMatch = Movie("Spider-Man: Brand New Day", "Imdb", "tt22084616");
-        var tmdbMatch = Movie("Coyote vs. Acme", "Tmdb", "1204680");
-        var wrongId = Movie(imdbMatch.Title, "Imdb", "tt9999999");
+        var imdbMatch = AddLibraryMovie("Imdb", "tt22084616");
+        var tmdbMatch = AddLibraryMovie("Tmdb", "1204680");
+        var wrongId = AddLibraryMovie("Imdb", "tt9999999");
 
         await SyncAsync(PopularFeed);
 
         var managedCollection = Assert.Single(_library.ManagedCollections);
         Assert.Equal("Steven Lu Popular Movies", managedCollection.Name);
         Assert.Equal($"AutoCollections:{PopularFeed}", managedCollection.Tag);
-        Assert.Contains(imdbMatch.Id, managedCollection.Members);
-        Assert.Contains(tmdbMatch.Id, managedCollection.Members);
-        Assert.DoesNotContain(wrongId.Id, managedCollection.Members);
+        Assert.Contains(imdbMatch, managedCollection.Members);
+        Assert.Contains(tmdbMatch, managedCollection.Members);
+        Assert.DoesNotContain(wrongId, managedCollection.Members);
         Assert.Equal(2, managedCollection.Members.Count);
     }
 
@@ -74,7 +77,7 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
     {
         var url = Origin + path;
         RecordBody(url, """[{"imdb_id":"tt22084616","tmdb_id":969681}]""");
-        Movie("Spider-Man: Brand New Day", "Imdb", "tt22084616");
+        AddLibraryMovie("Imdb", "tt22084616");
 
         await SyncAsync(url);
 
@@ -82,7 +85,7 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task Rejects_non_feed_URLs_before_requesting_them()
+    public async Task Rejects_unsupported_source_list_URLs_before_requesting_them()
     {
         string[] urls =
         [
@@ -112,31 +115,30 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
         await _sync.RunAsync(urls, unsupported.Add, CancellationToken.None);
 
         Assert.Equal(urls, unsupported);
+        Assert.Empty(_responses.Requests);
     }
 
     [Theory]
-    [InlineData("""[{"imdb_id":"tt22084616"}]""", "Imdb")]
-    [InlineData("""[{"imdb_id":"tt22084616","tmdb_id":null}]""", "Imdb")]
-    [InlineData("""[{"tmdb_id":969681}]""", "Tmdb")]
-    [InlineData("""[{"tmdb_id":969681,"imdb_id":null}]""", "Tmdb")]
-    [InlineData("""[{"tmdb_id":969681,"imdb_id":""}]""", "Tmdb")]
-    public async Task Matches_an_entry_with_only_one_provider_ID(string json, string provider)
+    [InlineData("""[{"imdb_id":"tt22084616"}]""", "Imdb", "tt22084616")]
+    [InlineData("""[{"imdb_id":"tt1234567","tmdb_id":null}]""", "Imdb", "tt1234567")]
+    [InlineData("""[{"tmdb_id":2147483647}]""", "Tmdb", "2147483647")]
+    [InlineData("""[{"tmdb_id":969681,"imdb_id":null}]""", "Tmdb", "969681")]
+    [InlineData("""[{"tmdb_id":969681,"imdb_id":""}]""", "Tmdb", "969681")]
+    public async Task Matches_a_source_list_entry_with_only_one_provider_ID(string json, string provider, string providerId)
     {
         RecordBody(PopularFeed, json);
-        var imdbMatch = Movie("Spider-Man: Brand New Day", "Imdb", "tt22084616");
-        var tmdbMatch = Movie("Spider-Man: Brand New Day", "Tmdb", "969681");
+        var match = AddLibraryMovie(provider, providerId);
 
         await SyncAsync(PopularFeed);
 
-        var expected = provider == "Imdb" ? imdbMatch.Id : tmdbMatch.Id;
-        Assert.Equal(expected, Assert.Single(Assert.Single(_library.ManagedCollections).Members));
+        Assert.Equal(match, Assert.Single(Assert.Single(_library.ManagedCollections).Members));
     }
 
     [Fact]
-    public async Task Accepts_an_empty_feed_without_creating_a_managed_collection()
+    public async Task Accepts_an_empty_source_list_without_creating_a_managed_collection()
     {
         RecordBody(PopularFeed, "[]");
-        Movie("Spider-Man: Brand New Day", "Imdb", "tt22084616");
+        AddLibraryMovie("Imdb", "tt22084616");
 
         await SyncAsync(PopularFeed);
 
@@ -151,16 +153,20 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
     [InlineData("""[{"title":"Spider-Man: Brand New Day"}]""")]
     [InlineData("""[{"imdb_id":22084616}]""")]
     [InlineData("""[{"imdb_id":"tt"}]""")]
+    [InlineData("""[{"imdb_id":"tt123456","tmdb_id":969681}]""")]
     [InlineData("""[{"imdb_id":"tt22084616 "}]""")]
     [InlineData("""[{"tmdb_id":"969681"}]""")]
     [InlineData("""[{"tmdb_id":1.5}]""")]
     [InlineData("""[{"tmdb_id":-1}]""")]
     [InlineData("""[{"tmdb_id":0}]""")]
+    [InlineData("""[{"tmdb_id":2147483648,"imdb_id":"tt22084616"}]""")]
+    [InlineData("""[{"imdb_id":null,"imdb_id":"tt22084616"}]""")]
+    [InlineData("""[{"tmdb_id":969681,"tmdb_\u0069d":969681}]""")]
     [InlineData("""[{"imdb_id":"tt22084616"},{"imdb_id":"tt7526136","tmdb_id":false}]""")]
-    public async Task Reports_malformed_feed_data_without_syncing_any_entries(string malformed)
+    public async Task Reports_malformed_source_list_data_without_syncing_any_entries(string malformed)
     {
         RecordBody(PopularFeed, malformed);
-        Movie("Spider-Man: Brand New Day", "Imdb", "tt22084616");
+        AddLibraryMovie("Imdb", "tt22084616");
 
         var failure = await Assert.ThrowsAsync<SourceListReadException>(() => SyncAsync(PopularFeed));
 
@@ -173,11 +179,11 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
     [InlineData(HttpStatusCode.ServiceUnavailable)]
     [InlineData(HttpStatusCode.Redirect)]
     [InlineData(null)]
-    public async Task Reports_an_unavailable_feed_as_a_source_list_read_failure(HttpStatusCode? status)
+    public async Task Reports_an_unavailable_source_list_as_a_read_failure(HttpStatusCode? status)
     {
-        _responses.Bodies[PopularFeed] = () => status is { } code
+        _responses.Record(PopularFeed, () => status is { } code
             ? new(code) { Headers = { Location = new Uri("https://not-the-feed.example/elsewhere.json") } }
-            : throw new HttpRequestException("Connection failed.");
+            : throw new HttpRequestException("Connection failed."));
 
         var failure = await Assert.ThrowsAsync<SourceListReadException>(() => SyncAsync(PopularFeed));
 
@@ -187,7 +193,7 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task Frequent_syncs_reuse_each_feeds_snapshot_for_24_hours_but_still_match_new_library_items()
+    public async Task Frequent_syncs_reuse_each_source_list_snapshot_for_24_hours_but_still_match_new_library_items()
     {
         const string allFeed = Origin + "/all-movies.json";
         RecordBody(PopularFeed, """[{"imdb_id":"tt22084616"}]""");
@@ -195,22 +201,22 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
 
         await SyncAsync(PopularFeed);
         RecordBody(PopularFeed, """[{"imdb_id":"tt7526136"}]""");
-        var spiderman = Movie("Spider-Man: Brand New Day", "Imdb", "tt22084616");
-        var coyote = Movie("Coyote vs. Acme", "Imdb", "tt1756855");
-        var heart = Movie("Heart of the Beast", "Imdb", "tt7526136");
+        var spiderman = AddLibraryMovie("Imdb", "tt22084616");
+        var coyote = AddLibraryMovie("Imdb", "tt1756855");
+        var heart = AddLibraryMovie("Imdb", "tt7526136");
         for (int hour = 1; hour < 24; hour++)
         {
             _clock.Advance(TimeSpan.FromHours(1));
             await SyncAsync(PopularFeed, allFeed);
         }
 
-        Assert.Equal([spiderman.Id], _library.ManagedCollections.Single(c => c.Tag.EndsWith("/movies.json")).Members);
-        Assert.Equal([coyote.Id], _library.ManagedCollections.Single(c => c.Tag.EndsWith("/all-movies.json")).Members);
+        Assert.Equal([spiderman], _library.ManagedCollections.Single(c => c.Tag.EndsWith("/movies.json")).Members);
+        Assert.Equal([coyote], _library.ManagedCollections.Single(c => c.Tag.EndsWith("/all-movies.json")).Members);
         Assert.Equal([PopularFeed, allFeed], _responses.Requests);
 
         _clock.Advance(TimeSpan.FromHours(1));
         await SyncAsync("HTTPS://POPULAR-MOVIES-DATA.STEVENLU.COM/movies.json", PopularFeed, allFeed);
-        Assert.Equal([spiderman.Id, heart.Id], _library.ManagedCollections.Single(c => c.Tag.EndsWith("/movies.json")).Members);
+        Assert.Equal([spiderman, heart], _library.ManagedCollections.Single(c => c.Tag.EndsWith("/movies.json")).Members);
         Assert.Equal([PopularFeed, allFeed, PopularFeed], _responses.Requests);
 
         _clock.Advance(TimeSpan.FromHours(1));
@@ -219,41 +225,81 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task A_restart_allows_a_fresh_poll_but_removing_and_readding_the_URL_does_not()
+    public async Task A_restart_and_readding_the_source_list_URL_reuse_the_snapshot_until_the_window_expires()
     {
-        RecordBody(PopularFeed, "[]");
+        RecordBody(PopularFeed, """[{"imdb_id":"tt22084616"}]""");
         await SyncAsync(PopularFeed);
         await SyncAsync();
         await SyncAsync(PopularFeed);
         Assert.Equal([PopularFeed], _responses.Requests);
 
-        await MakeSync().RunAsync([PopularFeed], ReportUnexpected, CancellationToken.None);
-
-        Assert.Equal([PopularFeed, PopularFeed], _responses.Requests);
-    }
-
-    [Fact]
-    public async Task Frequent_syncs_report_a_failed_feed_without_retrying_early()
-    {
-        _responses.Bodies[PopularFeed] = () => new(HttpStatusCode.ServiceUnavailable);
-        await Assert.ThrowsAsync<SourceListReadException>(() => SyncAsync(PopularFeed));
-
-        RecordBody(PopularFeed, "[]");
+        RecordBody(PopularFeed, """[{"imdb_id":"tt7526136"}]""");
+        var snapshotMatch = AddLibraryMovie("Imdb", "tt22084616");
+        var freshMatch = AddLibraryMovie("Imdb", "tt7526136");
+        var restarted = MakeSync();
         _clock.Advance(TimeSpan.FromHours(23));
-        await Assert.ThrowsAsync<SourceListReadException>(() => SyncAsync(PopularFeed));
+        await restarted.RunAsync([PopularFeed], ReportUnexpected, CancellationToken.None);
+
+        var collection = Assert.Single(_library.ManagedCollections);
+        Assert.Equal([snapshotMatch], collection.Members);
         Assert.Equal([PopularFeed], _responses.Requests);
 
         _clock.Advance(TimeSpan.FromHours(1));
-        await SyncAsync(PopularFeed);
+        await restarted.RunAsync([PopularFeed], ReportUnexpected, CancellationToken.None);
+
+        Assert.Equal([snapshotMatch, freshMatch], collection.Members);
         Assert.Equal([PopularFeed, PopularFeed], _responses.Requests);
     }
 
     [Fact]
-    public async Task Cancelling_a_sync_does_not_start_a_second_request_for_the_same_feed()
+    public async Task A_restart_reuses_an_empty_source_list_as_a_success()
+    {
+        RecordBody(PopularFeed, "[]");
+        await SyncAsync(PopularFeed);
+
+        AddLibraryMovie("Imdb", "tt22084616");
+        RecordBody(PopularFeed, """[{"imdb_id":"tt22084616"}]""");
+        await MakeSync().RunAsync([PopularFeed], ReportUnexpected, CancellationToken.None);
+
+        Assert.Empty(_library.ManagedCollections);
+        Assert.Equal([PopularFeed], _responses.Requests);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Frequent_syncs_report_a_failed_source_list_without_retrying_early(bool malformed)
+    {
+        if (malformed)
+        {
+            RecordBody(PopularFeed, """[{"imdb_id":"bad-id"}]""");
+        }
+        else
+        {
+            _responses.Record(PopularFeed, () => new(HttpStatusCode.ServiceUnavailable));
+        }
+        var original = await Assert.ThrowsAsync<SourceListReadException>(() => SyncAsync(PopularFeed));
+        RecordBody(PopularFeed, "[]");
+
+        _clock.Advance(TimeSpan.FromHours(23));
+        await Assert.ThrowsAsync<SourceListReadException>(() => SyncAsync(PopularFeed));
+        var restarted = MakeSync();
+        var cached = await Assert.ThrowsAsync<SourceListReadException>(
+            () => restarted.RunAsync([PopularFeed], ReportUnexpected, CancellationToken.None));
+        Assert.Equal(original.Message, cached.Message);
+        Assert.Equal([PopularFeed], _responses.Requests);
+
+        _clock.Advance(TimeSpan.FromHours(1));
+        await restarted.RunAsync([PopularFeed], ReportUnexpected, CancellationToken.None);
+        Assert.Equal([PopularFeed, PopularFeed], _responses.Requests);
+    }
+
+    [Fact]
+    public async Task Cancelling_a_sync_does_not_start_a_second_request_for_the_same_source_list()
     {
         using var cancellation = new CancellationTokenSource();
         var response = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _responses.PendingResponse = response.Task;
+        _responses.RecordPending(PopularFeed, response.Task);
         var first = _sync.RunAsync([PopularFeed], ReportUnexpected, cancellation.Token);
 
         cancellation.Cancel();
@@ -265,46 +311,101 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
         Assert.Equal([PopularFeed], _responses.Requests);
     }
 
-    public void Dispose() => _http.Dispose();
+    [Fact]
+    public async Task A_restart_before_the_source_list_fetch_finishes_does_not_open_a_retry_window()
+    {
+        // A fresh sync owner can see only the on-disk attempt until the original HTTP request completes.
+        using var cancellation = new CancellationTokenSource();
+        var response = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _responses.RecordPending(PopularFeed, response.Task);
+        var first = _sync.RunAsync([PopularFeed], ReportUnexpected, cancellation.Token);
 
-    private CollectionSync MakeSync() => new([new PopularMoviesHandler(_http, _clock)], _library);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first.WaitAsync(TimeSpan.FromSeconds(5)));
+        _clock.Advance(TimeSpan.FromHours(23));
+        var failure = await Assert.ThrowsAsync<SourceListReadException>(
+            () => MakeSync().RunAsync([PopularFeed], ReportUnexpected, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Contains("interrupted", failure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal([PopularFeed], _responses.Requests);
+
+        var stillWaiting = SyncAsync(PopularFeed);
+        response.SetResult(new(HttpStatusCode.OK) { Content = new StringContent("[]") });
+        await stillWaiting;
+        RecordBody(PopularFeed, "[]");
+
+        _clock.Advance(TimeSpan.FromHours(1));
+        await MakeSync().RunAsync([PopularFeed], ReportUnexpected, CancellationToken.None);
+        Assert.Equal([PopularFeed, PopularFeed], _responses.Requests);
+    }
+
+    [Fact]
+    public async Task Does_not_fetch_a_source_list_when_the_attempt_cannot_be_saved()
+    {
+        // A file where the state folder's parent should be makes the configured data path unusable.
+        File.WriteAllText(_dataPath, "not a directory");
+        RecordBody(PopularFeed, "[]");
+
+        var failure = await Assert.ThrowsAsync<SourceListReadException>(() => SyncAsync(PopularFeed));
+
+        Assert.Contains(PopularFeed, failure.Message);
+        Assert.Empty(_responses.Requests);
+    }
+
+    public void Dispose()
+    {
+        _http.Dispose();
+        if (Directory.Exists(_dataPath))
+        {
+            Directory.Delete(_dataPath, recursive: true);
+        }
+        else
+        {
+            File.Delete(_dataPath);
+        }
+    }
+
+    private CollectionSync MakeSync() => new([new PopularMoviesHandler(_http, _clock, _dataPath)], _library);
 
     private Task SyncAsync(params string[] urls) =>
         _sync.RunAsync(urls, ReportUnexpected, CancellationToken.None);
 
     private static void ReportUnexpected(string unsupported) => Assert.Fail($"Unexpected unsupported source list URL: {unsupported}");
 
-    private (Guid Id, string Title) Movie(string title, string provider, string providerId)
+    private Guid AddLibraryMovie(string provider, string providerId)
     {
         var id = Guid.NewGuid();
-        // The Jellyfin adapter exposes only the media type and provider IDs, not display titles.
         _library.Media.Add(new(id, new(SourceMediaType.Movie, new Dictionary<string, string> { [provider] = providerId })));
-        return (id, title);
+        return id;
     }
 
     private void RecordBody(string endpoint, string body) =>
-        _responses.Bodies[endpoint] = () => new(HttpStatusCode.OK) { Content = new StringContent(body) };
-
-    private sealed class FeedResponses : HttpMessageHandler
-    {
-        public Dictionary<string, Func<HttpResponseMessage>> Bodies { get; } = [];
-        public List<string> Requests { get; } = [];
-        public Task<HttpResponseMessage>? PendingResponse { get; set; }
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            Assert.Equal(HttpMethod.Get, request.Method);
-            var endpoint = request.RequestUri!.AbsoluteUri;
-            Requests.Add(endpoint);
-            return (PendingResponse ?? Task.FromResult(Bodies[endpoint]())).WaitAsync(cancellationToken);
-        }
-    }
+        _responses.RecordBody(endpoint, body);
 
     private sealed class TestClock : TimeProvider
     {
-        private long _ticks;
-        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
-        public override long GetTimestamp() => _ticks;
-        public void Advance(TimeSpan span) => _ticks += span.Ticks;
+        private DateTimeOffset _now = DateTimeOffset.UnixEpoch;
+        public override DateTimeOffset GetUtcNow() => _now;
+        public void Advance(TimeSpan span) => _now += span;
+    }
+
+    private sealed class TestApplicationPaths(string dataPath) : IApplicationPaths
+    {
+        public string DataPath => dataPath;
+        public string ProgramDataPath => throw new NotSupportedException();
+        public string WebPath => throw new NotSupportedException();
+        public string ProgramSystemPath => throw new NotSupportedException();
+        public string ImageCachePath => throw new NotSupportedException();
+        public string PluginsPath => throw new NotSupportedException();
+        public string PluginConfigurationsPath => throw new NotSupportedException();
+        public string LogDirectoryPath => throw new NotSupportedException();
+        public string ConfigurationDirectoryPath => throw new NotSupportedException();
+        public string SystemConfigurationFilePath => throw new NotSupportedException();
+        public string CachePath => throw new NotSupportedException();
+        public string TempDirectory => throw new NotSupportedException();
+        public string VirtualDataPath => throw new NotSupportedException();
+        public string TrickplayPath => throw new NotSupportedException();
+        public string BackupPath => throw new NotSupportedException();
+        public void MakeSanityCheckOrThrow() => throw new NotSupportedException();
+        public void CreateAndCheckMarker(string path, string markerName, bool recursive) => throw new NotSupportedException();
     }
 }

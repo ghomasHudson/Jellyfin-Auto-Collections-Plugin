@@ -47,7 +47,7 @@ public class CollectionSyncTests
     }
 
     [Fact]
-    public async Task Names_the_managed_collection_from_the_source_list_URL_when_the_handler_has_no_list_name()
+    public async Task Names_the_managed_collection_from_the_source_list_URL_when_the_source_list_has_no_name()
     {
         var library = new ControlledLibrary();
         var ids = new Dictionary<string, string> { ["Tvdb"] = "123" };

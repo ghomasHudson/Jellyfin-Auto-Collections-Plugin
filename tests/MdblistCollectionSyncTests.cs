@@ -8,13 +8,13 @@ public sealed class MdblistCollectionSyncTests : IDisposable
 {
     private const string TopMoviesUrl = "https://mdblist.com/lists/garycrawfordgc/top-movies";
     private readonly ControlledLibrary _library = new();
-    private readonly Dictionary<string, Func<HttpResponseMessage>> _responses = [];
+    private readonly RecordedHttpResponses _responses = new();
     private readonly HttpClient _http;
     private readonly CollectionSync _sync;
 
     public MdblistCollectionSyncTests()
     {
-        _http = new HttpClient(new RecordedResponses(_responses));
+        _http = new HttpClient(_responses);
         _sync = new CollectionSync([new MdblistHandler(_http)], _library);
     }
 
@@ -103,6 +103,18 @@ public sealed class MdblistCollectionSyncTests : IDisposable
         await SyncSourceListAsync(sourceListUrl);
 
         Assert.Empty(_library.ManagedCollections);
+    }
+
+    [Fact]
+    public async Task Still_matches_short_Imdb_IDs_from_an_MDBList_source_list()
+    {
+        RecordSourceList(TopMoviesUrl, "<html></html>", """[{"imdb_id":"tt1","mediatype":"movie"}]""");
+        var movie = Guid.NewGuid();
+        _library.Media.Add(new(movie, new(SourceMediaType.Movie, new Dictionary<string, string> { ["Imdb"] = "tt1" })));
+
+        await SyncSourceListAsync(TopMoviesUrl);
+
+        Assert.Equal([movie], Assert.Single(_library.ManagedCollections).Members);
     }
 
     [Theory]
@@ -204,32 +216,18 @@ public sealed class MdblistCollectionSyncTests : IDisposable
 
     private Task<SourceListReadException> SyncFailingTopMoviesSourceListAsync(HttpStatusCode? status)
     {
-        RecordBody(TopMoviesUrl, Fixture("top-movies.html"));
-        _responses[TopMoviesUrl + "/json"] = () =>
-            status is { } code ? new(code) : throw new HttpRequestException("Connection failed.");
+        _responses.RecordBody(TopMoviesUrl, Fixture("top-movies.html"));
+        _responses.Record(TopMoviesUrl + "/json", () =>
+            status is { } code ? new(code) : throw new HttpRequestException("Connection failed."));
         return Assert.ThrowsAsync<SourceListReadException>(() => SyncSourceListAsync(TopMoviesUrl));
     }
 
     private void RecordSourceList(string pageUrl, string html, string json)
     {
-        RecordBody(pageUrl, html);
-        RecordBody(pageUrl + "/json", json);
+        _responses.RecordBody(pageUrl, html);
+        _responses.RecordBody(pageUrl + "/json", json);
     }
-
-    private void RecordBody(string endpoint, string body) =>
-        _responses[endpoint] = () => new(HttpStatusCode.OK) { Content = new StringContent(body) };
 
     private static string Fixture(string name) =>
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", name));
-
-    private sealed class RecordedResponses(IReadOnlyDictionary<string, Func<HttpResponseMessage>> responses) : HttpMessageHandler
-    {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            var endpoint = request.RequestUri!.AbsoluteUri;
-            return responses.TryGetValue(endpoint, out var respond)
-                ? Task.FromResult(respond())
-                : throw new InvalidOperationException($"No recording for {endpoint}");
-        }
-    }
 }

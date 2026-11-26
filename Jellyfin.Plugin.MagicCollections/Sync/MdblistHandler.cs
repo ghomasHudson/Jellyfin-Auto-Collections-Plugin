@@ -81,21 +81,10 @@ public sealed class MdblistHandler(HttpClient http) : ISourceListHandler
             // MDBList's public export uses "id" for TMDb, not its own list or item identifier.
             AddNumericId(entry, "id", "Tmdb", ids);
             AddNumericId(entry, "tvdbid", "Tvdb", ids);
-            if (entry.TryGetProperty("imdb_id", out var imdb) && imdb.ValueKind != JsonValueKind.Null)
+            entry.TryGetProperty("imdb_id", out var imdb);
+            if (ImdbId.ReadOptional(imdb, minimumDigits: 1) is { } imdbId)
             {
-                if (imdb.ValueKind != JsonValueKind.String)
-                {
-                    throw new JsonException("Expected an IMDb ID string.");
-                }
-                if (imdb.GetString() is { Length: > 0 } imdbId)
-                {
-                    if (imdbId.Length < 3 || !imdbId.StartsWith("tt", StringComparison.Ordinal) ||
-                        imdbId.AsSpan(2).ContainsAnyExceptInRange('0', '9'))
-                    {
-                        throw new JsonException("Expected an IMDb ID starting with 'tt' followed by digits.");
-                    }
-                    ids["Imdb"] = imdbId;
-                }
+                ids["Imdb"] = imdbId;
             }
             items.Add(new(type, ids));
         }

@@ -44,7 +44,9 @@ Metacritic and Rotten Tomatoes offer minimum scores of 50, 60, 70, and 80. IMDb 
 
 The feeds roll over nightly. The sync task matches movies by IMDb or TMDb ID, adds missing matches, and keeps existing members even if they drop off the feed.
 
-The plugin fetches each feed at most once every 24 hours while Jellyfin is running. Between fetches, hourly triggers and **Run now** use the cached feed to match new library items or report the same error if the last fetch failed. Removing and re-adding a URL does not reset the timer, but restarting Jellyfin clears the cache. This limit applies only to Steven Lu’s feeds.
+[Upstream asks clients](https://github.com/sjlu/popular-movies#usage) to poll no more than once a day. Scheduled runs and **Run now** use the same sync task and share the same limit: at most one fetch attempt per feed in 24 hours. This is a ceiling, not a guarantee of fresh data every day. The next fetch happens on the first sync that reaches the feed after the 24 hours have elapsed.
+
+Between fetches, sync uses the saved result, including an empty list, to match new library items. If the fetch failed, sync reports the saved error. Restarting Jellyfin or removing and re-adding a URL does not reset the limit. If Jellyfin stops before saving the result, sync reports the interrupted attempt instead of retrying early. This limit applies only to Steven Lu’s feeds.
 
 ### Not yet supported
 
