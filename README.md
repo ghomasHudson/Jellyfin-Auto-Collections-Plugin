@@ -26,27 +26,12 @@ Jellyfin plugin to make and update collections based on internet lists such as I
 2. Open **Dashboard → Scheduled Tasks → Sync Magic Collections**. The default trigger is daily at 03:00 server time. Select **Run now** to run the same task immediately.
 3. If the task fails, check the task result or Jellyfin server log.
 
-A failed fetch or invalid list response stops the run and reports the source list URL without changing its managed collection. Unsupported URLs are logged and skipped. A valid empty source list is not a fetch error.
+## Supported List Sources
 
-Sync gives managed collections without a poster a black poster with the collection name in white. The text uses the server's installed fonts. Existing posters stay as they are after a rename. To use the new name, delete the poster and sync again.
-
-Sync copies the source list’s description into the collection overview and updates it when the description changes. A missing or blank description leaves the overview untouched. Steven Lu’s feeds do not provide list descriptions.
-
-## Supported list sources
-
-Here are the supported sites and example URLs:
-
-- MDBList
-  - <https://mdblist.com/lists/garycrawfordgc/top-movies>
-  - <https://mdblist.com/lists/official/movies/popular>
-- Steven Lu’s Popular Movies
-  - <https://popular-movies-data.stevenlu.com/movies.json>
-  - <https://popular-movies-data.stevenlu.com/all-movies.json>
-  - <https://popular-movies-data.stevenlu.com/movies-metacritic-min70.json>
-  - <https://popular-movies-data.stevenlu.com/movies-imdb-min7.json>
-  - <https://popular-movies-data.stevenlu.com/movies-rottentomatoes-min80.json>
-- Letterboxd
-  - <https://letterboxd.com/official/list/letterboxds-top-500-films/>
+- Letterboxd - public lists (`https://letterboxd.com/official/list/letterboxds-top-500-films/`)
+- mdblist - e.g. [Top Movies of the week](https://mdblist.com/lists/garycrawfordgc/top-movies-of-the-week)
+- [Steven Lu Popular movies](https://github.com/sjlu/popular-movies)
+- [BFI](https://www.bfi.org.uk/articles/type/lists)
 
 ### MDBList
 
@@ -67,7 +52,6 @@ To refresh cached Letterboxd film IDs, run **Dashboard → Scheduled Tasks → C
 
 Follow these issues for the status of other sources from Jellyfin Auto Collections:
 
-- [BFI film lists](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/16)
 - [Criterion Channel](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/18)
 - [IMDb lists and charts](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/13)
 - [Jellyfin library queries](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/21)
