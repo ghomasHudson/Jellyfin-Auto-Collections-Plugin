@@ -39,15 +39,17 @@ After editing the plugin, rerun `docker compose up --build -d` to install the re
 
 ## Configure and run
 
-1. Open **Dashboard → Plugins → Auto Collections**. Paste one full public MDBList page URL per line and select **Save**. For example:
+1. Open **Dashboard → Plugins → Auto Collections**. Paste a full public MDBList source list URL into the blank field. To add more URLs, use the next blank field that appears. Select **Save**. For example:
    - <https://mdblist.com/lists/garycrawfordgc/top-movies>
    - <https://mdblist.com/lists/official/movies/popular>
 
    Use the URL from your browser, not a `/json` export URL. No MDBList account or API key is needed.
+
+   MDBList’s interactive JustWatch charts for movies and shows (`justwatch-streaming-charts`) are unsupported because their JSON export ignores the chart filters. The regular `streaming-charts` source list is supported.
 2. Open **Dashboard → Scheduled Tasks → Sync Auto Collections**. The default trigger is daily at 03:00 server time. Select **Run now** to run the same task immediately.
 3. If the task fails, check the task result or Jellyfin server log.
 
-A failed fetch or invalid list response stops the run and reports the source URL without changing its collection. Unsupported URLs are logged and skipped. A valid empty list is not a fetch error.
+A failed fetch or invalid list response stops the run and reports the source list URL without changing its managed collection. Unsupported URLs are logged and skipped. A valid empty source list is not a fetch error.
 
 ## Add a handler
 

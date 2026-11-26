@@ -8,6 +8,8 @@ namespace Jellyfin.Plugin.AutoCollections.Sync;
 public sealed class MdblistHandler(HttpClient http) : ISourceListHandler
 {
     private const RegexOptions HtmlOptions = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking;
+    private static readonly Uri Origin = new("https://mdblist.com");
+
     // MDBList renders the name in this heading, separate from the list owner's heading.
     private static readonly Regex ListHeading = new("""<h3\s+class="textdark"\s*>(.*?)</h3\s*>""", HtmlOptions | RegexOptions.Singleline);
     private static readonly Regex HtmlTag = new("<[^>]*>", HtmlOptions);
@@ -16,10 +18,9 @@ public sealed class MdblistHandler(HttpClient http) : ISourceListHandler
 
     public async Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken)
     {
-        var path = PublicListPath(url) ?? throw new ArgumentException("Not a public MDBList list URL.", nameof(url));
-        var pageUrl = "https://mdblist.com" + path;
-        var html = await ReadResponseAsync(pageUrl, url, cancellationToken).ConfigureAwait(false);
-        var json = await ReadResponseAsync(pageUrl + "/json", url, cancellationToken).ConfigureAwait(false);
+        var path = PublicListPath(url) ?? throw new ArgumentException("Not a public MDBList source list URL.", nameof(url));
+        var html = await FetchBodyAsync(new Uri(Origin, path), url, cancellationToken).ConfigureAwait(false);
+        var json = await FetchBodyAsync(new Uri(Origin, path + "/json"), url, cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -27,11 +28,11 @@ public sealed class MdblistHandler(HttpClient http) : ISourceListHandler
         }
         catch (JsonException exception)
         {
-            throw new SourceListReadException(url, $"Invalid MDBList list data: {exception.Message}", exception);
+            throw new SourceListReadException(url, $"Invalid MDBList source list data: {exception.Message}", exception);
         }
     }
 
-    private async Task<string> ReadResponseAsync(string endpoint, Uri source, CancellationToken cancellationToken)
+    private async Task<string> FetchBodyAsync(Uri endpoint, Uri sourceListUrl, CancellationToken cancellationToken)
     {
         try
         {
@@ -39,11 +40,11 @@ public sealed class MdblistHandler(HttpClient http) : ISourceListHandler
         }
         catch (Exception exception) when (exception is HttpRequestException or IOException)
         {
-            throw new SourceListReadException(source, $"MDBList fetch failed: {exception.Message}", exception);
+            throw new SourceListReadException(sourceListUrl, $"MDBList fetch failed: {exception.Message}", exception);
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new SourceListReadException(source, "MDBList fetch timed out.", exception);
+            throw new SourceListReadException(sourceListUrl, "MDBList fetch timed out.", exception);
         }
     }
 
@@ -86,8 +87,13 @@ public sealed class MdblistHandler(HttpClient http) : ISourceListHandler
                 {
                     throw new JsonException("Expected an IMDb ID string.");
                 }
-                if (imdb.GetString()?.Trim() is { Length: > 0 } imdbId)
+                if (imdb.GetString() is { Length: > 0 } imdbId)
                 {
+                    if (imdbId.Length < 3 || !imdbId.StartsWith("tt", StringComparison.Ordinal) ||
+                        imdbId.AsSpan(2).ContainsAnyExceptInRange('0', '9'))
+                    {
+                        throw new JsonException("Expected an IMDb ID starting with 'tt' followed by digits.");
+                    }
                     ids["Imdb"] = imdbId;
                 }
             }
@@ -108,13 +114,16 @@ public sealed class MdblistHandler(HttpClient http) : ISourceListHandler
         var path = url.AbsolutePath.TrimEnd('/');
         return path.Split('/') switch
         {
-            ["", "lists", var owner, var slug] when IsPathPart(owner) && IsPathPart(slug) => path,
-            ["", "lists", "official", "movies" or "shows", var slug] when IsPathPart(slug) => path,
+            // The interactive chart's JSON does not represent the chart shown on the page.
+            ["", "lists", "official", "movies" or "shows", var slug]
+                when Uri.UnescapeDataString(slug) == "justwatch-streaming-charts" => null,
+            ["", "lists", var owner, var slug] when IsValidListPathSegment(owner) && IsValidListPathSegment(slug) => path,
+            ["", "lists", "official", "movies" or "shows", var slug] when IsValidListPathSegment(slug) => path,
             _ => null
         };
     }
 
-    private static bool IsPathPart(string segment)
+    private static bool IsValidListPathSegment(string segment)
     {
         var decoded = Uri.UnescapeDataString(segment);
         return decoded.Length > 0 && decoded is not ("." or "..") &&
