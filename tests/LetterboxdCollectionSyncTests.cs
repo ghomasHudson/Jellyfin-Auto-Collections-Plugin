@@ -1,7 +1,6 @@
 using System.Net;
-using Jellyfin.Plugin.MagicCollections.Api;
+using Jellyfin.Plugin.MagicCollections;
 using Jellyfin.Plugin.MagicCollections.Sync;
-using Microsoft.AspNetCore.Mvc;
 using Xunit;
 
 namespace MagicCollections.Tests;
@@ -204,10 +203,17 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task Clearing_the_cache_leaves_the_collection_untouched_and_fetches_fresh_film_IDs_on_the_next_sync()
+    public void The_cache_clear_task_has_no_default_triggers()
     {
-        var controller = new LetterboxdCacheController(_handler);
-        Assert.IsType<NoContentResult>(await controller.ClearLetterboxdCache(CancellationToken.None));
+        Assert.Empty(new ClearCacheTask(_handler).GetDefaultTriggers());
+    }
+
+    [Fact]
+    public async Task The_cache_clear_task_leaves_the_collection_untouched_and_fetches_fresh_film_IDs_on_the_next_sync()
+    {
+        var task = new ClearCacheTask(_handler);
+        var progress = new Progress<double>();
+        await task.ExecuteAsync(progress, CancellationToken.None);
         RecordHtml(ListPath, ListPage(ListPath, 1, Poster(0, MoviePath)));
         var moviePage = Fixture("letterboxd-movie.html");
         RecordHtml(MoviePath, moviePage);
@@ -215,14 +221,16 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
         var correctedMatch = AddMedia(SourceMediaType.Movie, "Tmdb", "12345");
         await SyncListAsync();
 
+        var cachedFilm = Assert.Single(Directory.GetFiles(_dataPath, "*.json", SearchOption.AllDirectories));
         // A different source's cache must survive the Letterboxd-only clear.
         var otherCache = Path.Combine(_dataPath, "magic-collections", "other-source.json");
         File.WriteAllText(otherCache, "{}");
         RecordHtml(MoviePath, moviePage.Replace("/movie/496243/", "/movie/12345/"));
-        Assert.IsType<NoContentResult>(await controller.ClearLetterboxdCache(CancellationToken.None));
+        await task.ExecuteAsync(progress, CancellationToken.None);
 
         var collection = Assert.Single(_library.ManagedCollections);
         Assert.Equal([movie], collection.Members);
+        Assert.False(File.Exists(cachedFilm));
         Assert.True(File.Exists(otherCache));
         Assert.Equal([ListUrl, Origin + MoviePath], _responses.Requests);
 

@@ -61,6 +61,8 @@ The regular `streaming-charts` list works. The interactive JustWatch charts (`ju
 
 Use a public custom list URL in the form `https://letterboxd.com/<member>/list/<slug>/`, without a query string or fragment Private lists, watchlists, liked films, short links, and filtered or sorted views are not supported.
 
+To refresh cached Letterboxd film IDs, run **Dashboard → Scheduled Tasks → Clear Magic Collections Cache**. The task has no default schedule. It leaves your collections untouched and does not start a sync; the next sync fetches the IDs again.
+
 ### Not yet supported
 
 Follow these issues for the status of other sources from Jellyfin Auto Collections:
