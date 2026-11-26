@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Auto Collections</title></head>
+<body>
+    <div id="autoCollectionsPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button,emby-textarea">
+        <div data-role="content"><div class="content-primary">
+            <form>
+                <label for="autoCollectionsUrls">Source list URLs (one per line)</label>
+                <textarea id="autoCollectionsUrls" is="emby-textarea" rows="8"></textarea>
+                <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
+            </form>
+        </div></div>
+        <script>
+            (() => {
+                const pluginId = '3290c5ef-9e20-4cdf-ab34-87e9021bcc34';
+                const page = document.querySelector('#autoCollectionsPage');
+                const urls = page.querySelector('textarea');
+                page.addEventListener('pageshow', async () => {
+                    Dashboard.showLoadingMsg();
+                    try {
+                        const config = await ApiClient.getPluginConfiguration(pluginId);
+                        urls.value = (config.SourceUrls || []).join('\n');
+                    } finally {
+                        Dashboard.hideLoadingMsg();
+                    }
+                });
+                page.querySelector('form').addEventListener('submit', async event => {
+                    event.preventDefault();
+                    Dashboard.showLoadingMsg();
+                    try {
+                        const config = await ApiClient.getPluginConfiguration(pluginId);
+                        config.SourceUrls = urls.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+                        const result = await ApiClient.updatePluginConfiguration(pluginId, config);
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                    } finally {
+                        Dashboard.hideLoadingMsg();
+                    }
+                });
+            })();
+        </script>
+    </div>
+</body>
+</html>
