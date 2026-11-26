@@ -110,7 +110,7 @@ jobs:
         env:
           DLL: ${{ steps.package.outputs.dll }}
           ASSET: ${{ steps.package.outputs.asset }}
-        run: python3 -m zipfile -c "$RUNNER_TEMP/$ASSET" "$DLL" LICENSE
+        run: python3 -m zipfile -c "$RUNNER_TEMP/$ASSET" "$DLL" "$(dirname "$DLL")/AngleSharp.dll" LICENSE LICENSE.AngleSharp
       - name: Generate release notes with Commitizen
         env:
           SEMVER: ${{ steps.package.outputs.semver }}

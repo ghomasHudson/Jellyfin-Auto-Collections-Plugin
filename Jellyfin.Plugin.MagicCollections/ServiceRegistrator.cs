@@ -18,6 +18,8 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ISourceListHandler>(services =>
             new PopularMoviesHandler(services.GetRequiredService<SourceListHttpClient>(), TimeProvider.System,
                 services.GetRequiredService<IApplicationPaths>().DataPath));
+        serviceCollection.AddSingleton<ISourceListHandler>(services =>
+            new LetterboxdHandler(services.GetRequiredService<SourceListHttpClient>()));
         serviceCollection.AddSingleton<ICollectionLibrary, JellyfinCollectionLibrary>();
         serviceCollection.AddSingleton<CollectionSync>();
     }

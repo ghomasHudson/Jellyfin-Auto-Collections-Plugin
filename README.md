@@ -21,17 +21,19 @@ WIP attempt to take the lessons learned from [Jellyfin-Auto-Collections](https:/
 
 ## Supported list sources
 
-Here are the sites currently supported and examples of the urls:
+Here are the supported sites and example URLs:
 
 - MDBList
-   - https://mdblist.com/lists/garycrawfordgc/top-movies
-   - https://mdblist.com/lists/official/movies/popular
+  - <https://mdblist.com/lists/garycrawfordgc/top-movies>
+  - <https://mdblist.com/lists/official/movies/popular>
 - Steven Lu’s Popular Movies
-   - https://popular-movies-data.stevenlu.com/movies.json
-   - https://popular-movies-data.stevenlu.com/all-movies.json
-   - https://popular-movies-data.stevenlu.com/movies-metacritic-min70.json
-   - https://popular-movies-data.stevenlu.com/movies-imdb-min7.json
-   - https://popular-movies-data.stevenlu.com/movies-rottentomatoes-min80.json
+  - <https://popular-movies-data.stevenlu.com/movies.json>
+  - <https://popular-movies-data.stevenlu.com/all-movies.json>
+  - <https://popular-movies-data.stevenlu.com/movies-metacritic-min70.json>
+  - <https://popular-movies-data.stevenlu.com/movies-imdb-min7.json>
+  - <https://popular-movies-data.stevenlu.com/movies-rottentomatoes-min80.json>
+- Letterboxd
+  - <https://letterboxd.com/jf_auto_collect/list/test_list/>
 
 ### MDBList
 
@@ -42,6 +44,12 @@ Use the URL from your browser, not a `/json` export URL. The plugin supports pub
 
 The regular `streaming-charts` list works. The interactive JustWatch charts (`justwatch-streaming-charts`) do not, because their JSON export ignores the chart filters.
 
+### Letterboxd
+
+Use a public custom list URL in the form `https://letterboxd.com/<member>/list/<slug>/`, including the trailing slash and without a query string or fragment. For example, <https://letterboxd.com/jf_auto_collect/list/test_list/>. Private lists, watchlists, liked films, short links, and filtered or sorted views are not supported.
+
+The plugin reads the public list and film pages without signing in or calling an API. A film page must link to a TMDb movie or series to establish its media type. Jellyfin can then match by TMDb or IMDb ID, never by title alone. If a page is blocked or incomplete, the plugin leaves the managed collection unchanged.
+
 ### Not yet supported
 
 Follow these issues for the status of other sources from Jellyfin Auto Collections:
@@ -50,7 +58,6 @@ Follow these issues for the status of other sources from Jellyfin Auto Collectio
 - [Criterion Channel](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/18)
 - [IMDb lists and charts](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/13)
 - [Jellyfin library queries](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/21)
-- [Letterboxd](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/14)
 - [ListMania](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/12)
 - [Radarr tags](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/19)
 - [Sonarr tags](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/20)
@@ -79,7 +86,7 @@ Install the **.NET 9 SDK**, version 9.0.200 or later in the 9.0 series. On Linux
 dotnet test MagicCollections.slnx -c Release
 ```
 
-This builds the plugin and runs the tests. Stop Jellyfin, create a `MagicCollections` directory under the server’s `plugins` directory, and copy `Jellyfin.Plugin.MagicCollections/bin/Release/net9.0/Jellyfin.Plugin.MagicCollections.dll` into it. Start Jellyfin again.
+This builds the plugin and runs the tests. Stop Jellyfin and create a `MagicCollections` directory under the server’s `plugins` directory. Copy `Jellyfin.Plugin.MagicCollections.dll` and `AngleSharp.dll` from `Jellyfin.Plugin.MagicCollections/bin/Release/net9.0/` and `LICENSE.AngleSharp` from the repository root into that directory, then start Jellyfin again.
 
 ## Contributing
 
@@ -147,7 +154,7 @@ The container adds a **Magic Collections Test Movies** library for `/test-media`
 4. Open **Collections** in Jellyfin. Check for the matching item and the black poster with the collection name in white.
 5. Set a custom poster for the collection. Run the task again and confirm it keeps your poster.
 
-After editing the plugin, rerun `docker compose up --build -d` to install the rebuilt DLL.
+After editing the plugin, rerun `docker compose up --build -d` to install the rebuilt plugin.
 
 - Run `docker compose down` to stop Jellyfin and keep your settings.
 - Run `docker compose down -v` to stop Jellyfin and delete the sandbox's configuration and cache.
