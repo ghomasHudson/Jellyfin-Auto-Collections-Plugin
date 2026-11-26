@@ -32,7 +32,7 @@ Here are the supported sites and example URLs:
   - <https://popular-movies-data.stevenlu.com/movies-imdb-min7.json>
   - <https://popular-movies-data.stevenlu.com/movies-rottentomatoes-min80.json>
 - Letterboxd
-  - <https://letterboxd.com/jf_auto_collect/list/test_list/>
+  - <https://letterboxd.com/official/list/letterboxds-top-500-films/>
 
 ### MDBList
 
