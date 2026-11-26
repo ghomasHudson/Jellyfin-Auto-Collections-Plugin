@@ -36,6 +36,7 @@ public sealed class MdblistCollectionSyncTests : IDisposable
     [Theory]
     [InlineData("")]
     [InlineData("""<span class="ui small text wrap"><p>&nbsp;</p></span>""")]
+    [InlineData("""<h3 class="textdark">Other lists</h3><span class="text wrap">Unrelated notes</span>""")]
     public async Task Preserves_the_managed_collection_overview_without_an_MDBList_description(string descriptionMarkup)
     {
         RecordSourceList(TopMoviesUrl, $"""

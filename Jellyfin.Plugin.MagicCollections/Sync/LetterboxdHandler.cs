@@ -28,7 +28,7 @@ public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
             throw new ArgumentException("Not a public Letterboxd list URL.", nameof(url));
         }
 
-        var (name, description, filmPaths) = await ReadMembershipAsync(url, cancellationToken).ConfigureAwait(false);
+        var (name, description, filmPaths) = await ReadListPagesAsync(url, cancellationToken).ConfigureAwait(false);
         var items = new List<MediaIdentity>();
         foreach (var filmPath in filmPaths)
         {
@@ -48,7 +48,7 @@ public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
         return new(name, items, description);
     }
 
-    private async Task<(string Name, string? Description, List<string> FilmPaths)> ReadMembershipAsync(Uri url, CancellationToken cancellationToken)
+    private async Task<(string Name, string? Description, List<string> FilmPaths)> ReadListPagesAsync(Uri url, CancellationToken cancellationToken)
     {
         var pagePath = url.AbsolutePath;
         var pageNumber = 1;

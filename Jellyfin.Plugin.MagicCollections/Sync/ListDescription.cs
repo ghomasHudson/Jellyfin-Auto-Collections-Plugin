@@ -12,11 +12,12 @@ internal static class ListDescription
         }
 
         // TextContent decodes entities and keeps link text but adds no spacing for HTML breaks.
-        foreach (var br in description.QuerySelectorAll("br"))
+        var formatted = (IElement)description.Clone(deep: true);
+        foreach (var br in formatted.QuerySelectorAll("br"))
         {
             br.InsertAdjacentText("afterend", "\n");
         }
-        foreach (var paragraph in description.QuerySelectorAll("p"))
+        foreach (var paragraph in formatted.QuerySelectorAll("p"))
         {
             if (paragraph.NextSibling is IText spacing && string.IsNullOrWhiteSpace(spacing.TextContent))
             {
@@ -24,6 +25,6 @@ internal static class ListDescription
             }
             paragraph.InsertAdjacentText("afterend", "\n\n");
         }
-        return description.TextContent.Trim();
+        return formatted.TextContent.Trim();
     }
 }

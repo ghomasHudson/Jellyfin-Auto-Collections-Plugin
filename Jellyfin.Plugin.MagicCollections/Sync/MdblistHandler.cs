@@ -21,7 +21,9 @@ public sealed class MdblistHandler(HttpClient http) : ISourceListHandler
             using var page = await new HtmlParser().ParseDocumentAsync(html, cancellationToken).ConfigureAwait(false);
             // The description sits beside the list heading, separate from the individual cards' synopses.
             var heading = page.QuerySelector("h3.textdark");
-            var description = page.QuerySelector("h3.textdark + span.text.wrap");
+            var description = heading?.NextElementSibling is { } sibling && sibling.Matches("span.text.wrap")
+                ? sibling
+                : null;
             return new(heading?.TextContent.Trim(), ReadItems(json), ListDescription.Read(description));
         }
         catch (JsonException exception)
