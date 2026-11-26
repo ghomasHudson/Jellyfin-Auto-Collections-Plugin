@@ -6,6 +6,7 @@ internal sealed class ControlledLibrary : ICollectionLibrary
 {
     public sealed record ManagedCollection(Guid Id, string Name, string Tag, List<Guid> Members)
     {
+        public string? Overview { get; set; }
         public string? PosterTitle { get; set; }
     }
 
@@ -26,6 +27,12 @@ internal sealed class ControlledLibrary : ICollectionLibrary
     public Task AddMembersAsync(Guid id, IReadOnlyCollection<Guid> memberIds)
     {
         ManagedCollections.Single(c => c.Id == id).Members.AddRange(memberIds);
+        return Task.CompletedTask;
+    }
+
+    public Task SetOverviewAsync(Guid id, string overview, CancellationToken cancellationToken)
+    {
+        ManagedCollections.Single(c => c.Id == id).Overview = overview;
         return Task.CompletedTask;
     }
 

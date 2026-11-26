@@ -22,6 +22,30 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
         _sync = new CollectionSync([new LetterboxdHandler(_http)], _library);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Refreshes_the_existing_overview_from_full_Letterboxd_list_notes_without_new_members(bool collapsed)
+    {
+        await _library.CreateAsync("My weekend films", $"AutoCollections:{ListUrl}");
+        var collection = Assert.Single(_library.ManagedCollections);
+        collection.Overview = "Earlier notes";
+        const string fullText = """
+            <p>Picks for <em>you</em> &amp; me.</p>
+            <p>Updated every Friday.</p>
+            """;
+        var notes = $"""<div class="body-text -prose" data-full-text-url="#list-notes">{(collapsed ? "<p>Picks for you…</p>" : fullText)}</div>""";
+        if (collapsed)
+        {
+            notes += $"""<div id="list-notes" class="body-text -prose" hidden>{fullText}</div>""";
+        }
+        RecordHtml(ListPath, ListPage(ListPath, 0, "", notes: notes));
+
+        await SyncListAsync();
+
+        Assert.Equal("Picks for you & me.\n\nUpdated every Friday.", collection.Overview);
+    }
+
     [Fact]
     public async Task Syncs_a_public_Letterboxd_list_by_provider_ID()
     {
@@ -357,7 +381,7 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
     private static string Fixture(string name) =>
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", name));
 
-    private static string ListPage(string path, int count, string posters, string? next = null) =>
+    private static string ListPage(string path, int count, string posters, string? next = null, string? notes = null) =>
         $$"""
         <!DOCTYPE html><html><head>
           <meta property="og:type" content="letterboxd:list">
@@ -368,6 +392,7 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
             <section id="userpanel" data-component-class="ListSidebar" data-list-type="public"
               data-list-name="Weekend Films &amp; Friends"></section>
             <section class="col-main">
+              {{(notes is null ? "" : $"""<div class="list-title-intro">{notes}</div>""")}}
               {{(count == 0 ? "" : $"""<ul class="poster-list -p125 -grid">{posters}</ul>""")}}
               {{(next is null ? "" : $"""<div class="pagination"><div class="paginate-nextprev"><a class="next" href="{next}">Next</a></div></div>""")}}
             </section>

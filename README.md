@@ -73,6 +73,8 @@ A failed fetch or invalid list response stops the run and reports the source lis
 
 Sync gives managed collections without a poster a black poster with the collection name in white. The text uses the server's installed fonts. Existing posters stay as they are after a rename. To use the new name, delete the poster and sync again.
 
+Sync copies the source list’s description into the collection overview and updates it when the description changes. A missing or blank description leaves the overview untouched. Steven Lu’s feeds do not provide list descriptions.
+
 # Developers
 
 ## Build and install manually
@@ -160,7 +162,7 @@ After editing the plugin, rerun `docker compose up --build -d` to install the re
 
 ## Add a new Site
 
-Implement `ISourceListHandler` to recognize a site's URLs and return a `SourceList` with an optional name and entries containing a media type and provider IDs. Register the implementation for `ISourceListHandler` in `ServiceRegistrator`. The handler only reads the source list.
+Implement `ISourceListHandler` to recognize a site's URLs and return a `SourceList` with an optional name, optional plain-text description, and entries containing a media type and provider IDs. Register the implementation for `ISourceListHandler` in `ServiceRegistrator`. The handler only reads the source list.
 
 `CollectionSync` matches movies and series by media type and at least one shared provider name and ID. It still finds existing collections by their `AutoCollections:<absolute source URL>` tags. It adds only missing members.
 

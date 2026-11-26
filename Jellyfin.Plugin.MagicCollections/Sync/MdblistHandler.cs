@@ -1,18 +1,12 @@
 using System.Globalization;
-using System.Net;
 using System.Text.Json;
-using System.Text.RegularExpressions;
+using AngleSharp.Html.Parser;
 
 namespace Jellyfin.Plugin.MagicCollections.Sync;
 
 public sealed class MdblistHandler(HttpClient http) : ISourceListHandler
 {
-    private const RegexOptions HtmlOptions = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking;
     private static readonly Uri Origin = new("https://mdblist.com");
-
-    // MDBList renders the name in this heading, separate from the list owner's heading.
-    private static readonly Regex ListHeading = new("""<h3\s+class="textdark"\s*>(.*?)</h3\s*>""", HtmlOptions | RegexOptions.Singleline);
-    private static readonly Regex HtmlTag = new("<[^>]*>", HtmlOptions);
 
     public bool Supports(Uri url) => PublicListPath(url) is not null;
 
@@ -24,7 +18,13 @@ public sealed class MdblistHandler(HttpClient http) : ISourceListHandler
 
         try
         {
-            return new(ReadName(html), ReadItems(json));
+            using var page = await new HtmlParser().ParseDocumentAsync(html, cancellationToken).ConfigureAwait(false);
+            // The description sits beside the list heading, separate from the individual cards' synopses.
+            var heading = page.QuerySelector("h3.textdark");
+            var description = heading?.NextElementSibling is { } sibling && sibling.Matches("span.text.wrap")
+                ? sibling
+                : null;
+            return new(heading?.TextContent.Trim(), ReadItems(json), ListDescription.Read(description));
         }
         catch (JsonException exception)
         {
@@ -46,12 +46,6 @@ public sealed class MdblistHandler(HttpClient http) : ISourceListHandler
         {
             throw new SourceListReadException(sourceListUrl, "MDBList fetch timed out.", exception);
         }
-    }
-
-    private static string? ReadName(string html)
-    {
-        var heading = ListHeading.Match(html);
-        return heading.Success ? WebUtility.HtmlDecode(HtmlTag.Replace(heading.Groups[1].Value, "")).Trim() : null;
     }
 
     private static List<MediaIdentity> ReadItems(string json)
