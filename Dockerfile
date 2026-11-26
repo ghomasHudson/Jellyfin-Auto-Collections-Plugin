@@ -8,7 +8,8 @@ COPY Jellyfin.Plugin.MagicCollections/ Jellyfin.Plugin.MagicCollections/
 RUN dotnet build Jellyfin.Plugin.MagicCollections -c Release --no-restore -o /out
 
 FROM docker.io/jellyfin/jellyfin:10.11.5
-COPY --from=build /out/Jellyfin.Plugin.MagicCollections.dll /opt/magiccollections/
+COPY --from=build /out/Jellyfin.Plugin.MagicCollections.dll /out/AngleSharp.dll /opt/magiccollections/
+COPY LICENSE.AngleSharp /opt/magiccollections/
 COPY docker/start-jellyfin.sh /opt/magiccollections/
 
 # Zero-byte movie placeholders for testing library scans, not playback.

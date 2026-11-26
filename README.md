@@ -21,12 +21,20 @@ WIP attempt to take the lessons learned from [Jellyfin-Auto-Collections](https:/
 
 ## Supported list sources
 
-**MDBList is the only supported site right now.** Use the URL from your browser, not a `/json` export URL. No account or API key is needed. The plugin supports public user lists and official movie and show lists, for example:
+### MDBList
+
+Use the URL from your browser, not a `/json` export URL. No account or API key is needed. The plugin supports public user lists and official movie and show lists, for example:
 
 - <https://mdblist.com/lists/garycrawfordgc/top-movies>
 - <https://mdblist.com/lists/official/movies/popular>
 
 The regular `streaming-charts` list works. The interactive JustWatch charts (`justwatch-streaming-charts`) do not, because their JSON export ignores the chart filters.
+
+### Letterboxd
+
+Use a public list URL in the form `https://letterboxd.com/<member>/list/<slug>/`, including the trailing slash. For example, <https://letterboxd.com/jf_auto_collect/list/test_list/>. Private lists, watchlists, liked films, short links, and filtered or sorted views are not supported.
+
+The plugin reads the public list and film pages without signing in. It skips entries without a verified IMDb or TMDb ID and a known media type. It never matches by title alone. If a page is blocked or incomplete, the plugin leaves the managed collection unchanged.
 
 ### Not yet supported
 
@@ -36,7 +44,6 @@ Follow these issues for the status of other sources from Jellyfin Auto Collectio
 - [Criterion Channel](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/18)
 - [IMDb lists and charts](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/13)
 - [Jellyfin library queries](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/21)
-- [Letterboxd](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/14)
 - [ListMania](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/12)
 - [Radarr tags](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/19)
 - [Sonarr tags](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/20)
@@ -66,7 +73,7 @@ Install the **.NET 9 SDK**, version 9.0.200 or later in the 9.0 series. On Linux
 dotnet test MagicCollections.slnx -c Release
 ```
 
-This builds the plugin and runs the tests. Stop Jellyfin, create a `MagicCollections` directory under the server’s `plugins` directory, and copy `Jellyfin.Plugin.MagicCollections/bin/Release/net9.0/Jellyfin.Plugin.MagicCollections.dll` into it. Start Jellyfin again.
+This builds the plugin and runs the tests. Stop Jellyfin and create a `MagicCollections` directory under the server’s `plugins` directory. Copy both `Jellyfin.Plugin.MagicCollections.dll` and `AngleSharp.dll` from `Jellyfin.Plugin.MagicCollections/bin/Release/net9.0/` into that directory, then start Jellyfin again.
 
 ## Contributing
 
