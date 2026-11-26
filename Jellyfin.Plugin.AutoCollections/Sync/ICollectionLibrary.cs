@@ -1,6 +1,6 @@
 namespace Jellyfin.Plugin.AutoCollections.Sync;
 
-public sealed record LibraryMedia(Guid Id, SourceMediaType Type, IReadOnlyDictionary<string, string> ProviderIds);
+public sealed record LibraryMedia(Guid Id, MediaIdentity Identity);
 
 public sealed record TaggedCollection(Guid Id, IReadOnlyCollection<Guid> MemberIds);
 

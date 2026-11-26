@@ -5,8 +5,8 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
     public async Task RunAsync(IEnumerable<string> urls, Action<string> reportUnsupported, CancellationToken cancellationToken)
     {
         // Load once per run, and only if there's a supported source.
-        var media = new Lazy<ILookup<(SourceMediaType, string, string), Guid>>(() =>
-            library.GetMedia().SelectMany(item => Keys(item.Type, item.ProviderIds), (item, key) => (key, item.Id))
+        var media = new Lazy<ILookup<MatchKey, Guid>>(() =>
+            library.GetMedia().SelectMany(item => Keys(item.Identity), (item, key) => (key, item.Id))
                 .ToLookup(pair => pair.key, pair => pair.Id));
 
         foreach (var url in urls)
@@ -20,7 +20,7 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             }
 
             var list = await handler.ReadAsync(source, cancellationToken).ConfigureAwait(false);
-            var matches = list.Items.SelectMany(item => Keys(item.Type, item.ProviderIds))
+            var matches = list.Items.SelectMany(Keys)
                 .SelectMany(key => media.Value[key]).ToHashSet();
             if (matches.Count == 0)
             {
@@ -51,13 +51,15 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
         return words.Length == 0 ? source.Host : string.Join(' ', words);
     }
 
-    private static IEnumerable<(SourceMediaType, string, string)> Keys(SourceMediaType type, IReadOnlyDictionary<string, string> ids)
+    private readonly record struct MatchKey(SourceMediaType Type, string Provider, string ProviderId);
+
+    private static IEnumerable<MatchKey> Keys(MediaIdentity identity)
     {
-        foreach (var (provider, id) in ids)
+        foreach (var (provider, id) in identity.ProviderIds)
         {
             if (!string.IsNullOrWhiteSpace(provider) && !string.IsNullOrWhiteSpace(id))
             {
-                yield return (type, provider.ToUpperInvariant(), id);
+                yield return new(identity.Type, provider.ToUpperInvariant(), id);
             }
         }
     }

@@ -19,7 +19,7 @@ internal sealed class JellyfinCollectionLibrary(ILibraryManager library, ICollec
             GroupByPresentationUniqueKey = false
         }, allowExternalContent: false);
         return items.Select(item => new LibraryMedia(
-            item.Id, item is Movie ? SourceMediaType.Movie : SourceMediaType.Series, item.ProviderIds));
+            item.Id, new(item is Movie ? SourceMediaType.Movie : SourceMediaType.Series, item.ProviderIds)));
     }
 
     public TaggedCollection? FindByTag(string tag)
