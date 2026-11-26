@@ -39,6 +39,10 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
                 await library.AddMembersAsync(id, matches).ConfigureAwait(false);
             }
 
+            if (!string.IsNullOrWhiteSpace(list.Description))
+            {
+                await library.SetOverviewAsync(id, list.Description, cancellationToken).ConfigureAwait(false);
+            }
             await library.EnsurePosterAsync(id, cancellationToken).ConfigureAwait(false);
         }
     }
