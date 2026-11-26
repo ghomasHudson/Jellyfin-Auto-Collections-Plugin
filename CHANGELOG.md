@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.3.0 (2026-11-26)
+
+### Feat
+
+- **letterboxd**: move cache clearing to a manual task
+
 ## v0.2.2.0 (2026-11-26)
 
 ### Feat
