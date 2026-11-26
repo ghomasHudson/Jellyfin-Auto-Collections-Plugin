@@ -12,13 +12,13 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
     private const string MoviePath = "/film/the-example/";
     private const string MovieProviderLink = """<a href="https://www.themoviedb.org/movie/496243/" class="micro-button track-event" data-track-action="TMDB">TMDB</a>""";
     private readonly ControlledLibrary _library = new();
-    private readonly Dictionary<string, Func<HttpResponseMessage>> _responses = [];
+    private readonly RecordedHttpResponses _responses = new();
     private readonly HttpClient _http;
     private readonly CollectionSync _sync;
 
     public LetterboxdCollectionSyncTests()
     {
-        _http = new HttpClient(new RecordedResponses(_responses));
+        _http = new HttpClient(_responses);
         _sync = new CollectionSync([new LetterboxdHandler(_http)], _library);
     }
 
@@ -157,19 +157,19 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
         switch (problem)
         {
             case "blocked":
-                _responses[Origin + failingFilmPath] = () => new(HttpStatusCode.Forbidden);
+                _responses.Record(Origin + failingFilmPath, () => new(HttpStatusCode.Forbidden));
                 break;
             case "redirect":
-                _responses[Origin + failingFilmPath] = () => new(HttpStatusCode.Found)
+                _responses.Record(Origin + failingFilmPath, () => new(HttpStatusCode.Found)
                 {
                     Headers = { Location = new("https://example.org/film/failing-film/") }
-                };
+                });
                 break;
             case "partial HTTP":
-                _responses[Origin + failingFilmPath] = () => new(HttpStatusCode.PartialContent)
+                _responses.Record(Origin + failingFilmPath, () => new(HttpStatusCode.PartialContent)
                 {
                     Content = new StringContent(failingPage, null, "text/html")
-                };
+                });
                 break;
             case "challenge":
                 RecordHtml(failingFilmPath, "<html><title>Just a moment...</title></html>");
@@ -181,7 +181,7 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
                 RecordHtml(failingFilmPath, failingPage[..failingPage.IndexOf("</body>", StringComparison.Ordinal)]);
                 break;
             case "connection failed":
-                _responses[Origin + failingFilmPath] = () => throw new HttpRequestException("Connection failed.");
+                _responses.Record(Origin + failingFilmPath, () => throw new HttpRequestException("Connection failed."));
                 break;
         }
         AddMedia(SourceMediaType.Movie, "Tmdb", "496243");
@@ -297,7 +297,7 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
     }
 
     private void RecordHtml(string path, string html) =>
-        _responses[Origin + path] = () => new(HttpStatusCode.OK) { Content = new StringContent(html, null, "text/html") };
+        _responses.Record(Origin + path, () => new(HttpStatusCode.OK) { Content = new StringContent(html, null, "text/html") });
 
     private static string Fixture(string name) =>
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", name));
@@ -328,16 +328,4 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
             data-item-name="The Example" data-item-link="{{link}}" data-list-index="{{index}}"></div>
         </li>
         """;
-
-    private sealed class RecordedResponses(IReadOnlyDictionary<string, Func<HttpResponseMessage>> responses) : HttpMessageHandler
-    {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            Assert.Equal(HttpMethod.Get, request.Method);
-            var endpoint = request.RequestUri!.AbsoluteUri;
-            return responses.TryGetValue(endpoint, out var respond)
-                ? Task.FromResult(respond())
-                : throw new InvalidOperationException($"No recording for {endpoint}");
-        }
-    }
 }

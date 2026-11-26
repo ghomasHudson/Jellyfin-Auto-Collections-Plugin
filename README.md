@@ -21,9 +21,23 @@ WIP attempt to take the lessons learned from [Jellyfin-Auto-Collections](https:/
 
 ## Supported list sources
 
+Here are the supported sites and example URLs:
+
+- MDBList
+  - <https://mdblist.com/lists/garycrawfordgc/top-movies>
+  - <https://mdblist.com/lists/official/movies/popular>
+- Steven Lu’s Popular Movies
+  - <https://popular-movies-data.stevenlu.com/movies.json>
+  - <https://popular-movies-data.stevenlu.com/all-movies.json>
+  - <https://popular-movies-data.stevenlu.com/movies-metacritic-min70.json>
+  - <https://popular-movies-data.stevenlu.com/movies-imdb-min7.json>
+  - <https://popular-movies-data.stevenlu.com/movies-rottentomatoes-min80.json>
+- Letterboxd
+  - <https://letterboxd.com/jf_auto_collect/list/test_list/>
+
 ### MDBList
 
-Use the URL from your browser, not a `/json` export URL. No account or API key is needed. The plugin supports public user lists and official movie and show lists, for example:
+Use the URL from your browser, not a `/json` export URL. The plugin supports public user lists and official movie and show lists, for example:
 
 - <https://mdblist.com/lists/garycrawfordgc/top-movies>
 - <https://mdblist.com/lists/official/movies/popular>
@@ -32,9 +46,9 @@ The regular `streaming-charts` list works. The interactive JustWatch charts (`ju
 
 ### Letterboxd
 
-Use a public list URL in the form `https://letterboxd.com/<member>/list/<slug>/`, including the trailing slash. For example, <https://letterboxd.com/jf_auto_collect/list/test_list/>. Private lists, watchlists, liked films, short links, and filtered or sorted views are not supported.
+Use a public custom list URL in the form `https://letterboxd.com/<member>/list/<slug>/`, including the trailing slash and without a query string or fragment. For example, <https://letterboxd.com/jf_auto_collect/list/test_list/>. Private lists, watchlists, liked films, short links, and filtered or sorted views are not supported.
 
-The plugin reads the public list and film pages without signing in. It skips entries without a verified IMDb or TMDb ID and a known media type. It never matches by title alone. If a page is blocked or incomplete, the plugin leaves the managed collection unchanged.
+The plugin reads the public list and film HTML without signing in or calling an API. It skips entries without a verified IMDb or TMDb ID and a known media type. It never matches by title alone. If a page is blocked or incomplete, the plugin leaves the managed collection unchanged.
 
 ### Not yet supported
 
@@ -47,7 +61,6 @@ Follow these issues for the status of other sources from Jellyfin Auto Collectio
 - [ListMania](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/12)
 - [Radarr tags](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/19)
 - [Sonarr tags](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/20)
-- [Steven Lu’s Popular Movies](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/11)
 - [They Shoot Pictures, Don’t They? (TSPDT)](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/17)
 - [Trakt lists and charts](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/15)
 
