@@ -4,10 +4,17 @@
 
 WIP attempt to take the lessons learned from [Jellyfin-Auto-Collections](https://github.com/ghomasHudson/Jellyfin-Auto-Collections) and turn it into a native jellyfin plugin.
 
-Will publish it as a proper plugin when it's further along.
+## Install from the Jellyfin catalog
 
+In Jellyfin, open **Dashboard → Plugins → Repositories** and add this repository URL:
 
-## Build and install
+```text
+https://raw.githubusercontent.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/main/manifest.json
+```
+
+Magic Collections will appear in the plugin catalog after the first compatible release. Install it from there and restart Jellyfin. To try it before the first release, build it locally or use Docker.
+
+## Build and install manually
 
 The plugin targets Jellyfin Server **10.11.5**. Install the **.NET 9 SDK** (9.0.200 or a newer 9.0 SDK), then run this command from the repository root:
 
@@ -39,6 +46,29 @@ cz check --rev-range origin/main..HEAD
 ```
 
 If you squash-merge a pull request, use a Conventional Commit subject for the resulting commit too.
+
+### Publish a release
+
+In GitHub, you can start a release from **Actions → Release plugin → Run workflow**. Run it on `main`. Commitizen reads Conventional Commits to choose the next version when you select `auto`. If you’re publishing the first release and have no eligible commits yet, select `patch`.
+
+The workflow runs `cz bump` to update the project version and `CHANGELOG.md` and create the release commit and tag. For example, Commitizen version `0.1.1` produces the Jellyfin assembly version `0.1.1.0` and tag `v0.1.1.0`. You can preview the changelog with `cz changelog --dry-run`.
+
+You can also prepare the release locally. Start with a clean working tree on `main`:
+
+```sh
+git switch main
+git pull --ff-only --tags
+cz bump --check-consistency
+git push --atomic origin main "refs/tags/v$(cz version --project).0"
+```
+
+Add `--increment PATCH` to `cz bump` to choose a patch release instead.
+
+The workflow tests the plugin and generates GitHub release notes with `cz changelog`. It adds the new version and download details to `manifest.json` without removing older entries. If publishing fails after the tag reaches GitHub, you can run the workflow on that tag without bumping the version again:
+
+```sh
+gh workflow run release.yml --ref v0.1.1.0
+```
 
 ## Try the plugin in Docker
 

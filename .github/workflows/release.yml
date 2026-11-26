@@ -1,0 +1,174 @@
+name: Release plugin
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      increment:
+        description: Version increment (auto reads Conventional Commits)
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+
+permissions:
+  contents: write
+
+concurrency:
+  group: plugin-release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check release ref
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            if ! git merge-base --is-ancestor HEAD origin/main; then
+              echo "Tag a commit from main to publish a release." >&2
+              exit 1
+            fi
+          elif [[ "$GITHUB_REF" != refs/heads/main || "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
+            echo "Start a new release from the current tip of main, or select its existing tag to retry publishing." >&2
+            exit 1
+          fi
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: '9.0.x'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Install Commitizen
+        run: python -m pip install 'commitizen==4.20.1'
+      - name: Bump version and update changelog
+        if: github.ref == 'refs/heads/main'
+        env:
+          INCREMENT: ${{ inputs.increment }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          args=()
+          case "$INCREMENT" in
+            auto|'') ;;
+            patch|minor|major) args+=(--increment "${INCREMENT^^}") ;;
+            *) echo "Invalid release increment." >&2; exit 1 ;;
+          esac
+          cz bump --yes --check-consistency "${args[@]}"
+      - name: Check tag and read package metadata
+        id: package
+        run: |
+          project=Jellyfin.Plugin.MagicCollections
+          metadata=$(dotnet msbuild "$project/$project.csproj" -nologo -t:GetAssemblyVersion \
+            -getProperty:Version,AssemblyVersion,TargetFramework -getItem:PackageReference)
+          semver=$(jq -er '.Properties.Version' <<< "$metadata")
+          version=$(jq -er '.Properties.AssemblyVersion' <<< "$metadata")
+          framework=$(jq -er '.Properties.TargetFramework' <<< "$metadata")
+          abi=$(jq -er '
+            [.Items.PackageReference[] | select(.Identity == "Jellyfin.Controller" or .Identity == "Jellyfin.Model") | .Version] |
+            if length == 2 and .[0] == .[1] then .[0] else error("Jellyfin package versions must match") end
+          ' <<< "$metadata")
+
+          component='(0|[1-9][0-9]*)'
+          if [[ ! "$semver" =~ ^$component(\.$component){2}$ || "$semver" != "$(cz version --project)" || "$version" != "$semver.0" ]]; then
+            echo "The Commitizen, project, and Jellyfin assembly versions must agree." >&2
+            exit 1
+          fi
+          tag="v$version"
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "$tag" ]] ||
+             [[ "$(git rev-parse --verify -q "refs/tags/$tag^{commit}")" != "$(git rev-parse HEAD)" ]]; then
+            echo "Expected tag $tag to point to the release commit." >&2
+            exit 1
+          fi
+          if [[ ! "$abi" =~ ^$component(\.$component){2}$ ]]; then
+            echo "Expected a three-part Jellyfin package version, got $abi" >&2
+            exit 1
+          fi
+
+          {
+            echo "tag=$tag"
+            echo "semver=$semver"
+            echo "version=$version"
+            echo "abi=$abi.0"
+            echo "dll=$project/bin/Release/$framework/$project.dll"
+            echo "asset=magic-collections-$version.zip"
+          } >> "$GITHUB_OUTPUT"
+      - name: Build and test
+        run: dotnet test MagicCollections.slnx -c Release
+      - name: Package plugin
+        env:
+          DLL: ${{ steps.package.outputs.dll }}
+          ASSET: ${{ steps.package.outputs.asset }}
+        run: python3 -m zipfile -c "$RUNNER_TEMP/$ASSET" "$DLL" LICENSE
+      - name: Generate release notes with Commitizen
+        env:
+          SEMVER: ${{ steps.package.outputs.semver }}
+        run: |
+          cz changelog "$SEMVER" --dry-run > "$RUNNER_TEMP/release-notes.md"
+          test -s "$RUNNER_TEMP/release-notes.md"
+      - name: Push release commit and tag
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.package.outputs.tag }}
+        run: |
+          # A push using GITHUB_TOKEN won't start another workflow run. Publish below.
+          git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
+            push --atomic origin HEAD:refs/heads/main "refs/tags/$TAG"
+      - name: Publish release and update manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.package.outputs.tag }}
+          VERSION: ${{ steps.package.outputs.version }}
+          ABI: ${{ steps.package.outputs.abi }}
+          ASSET: ${{ steps.package.outputs.asset }}
+        run: |
+          tag="$TAG"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" "$RUNNER_TEMP/$ASSET" --verify-tag --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
+
+          release=$(gh release view "$tag" --json isDraft,isPrerelease,publishedAt,url,assets)
+          jq -e '.isDraft == false and .isPrerelease == false' <<< "$release" >/dev/null
+          release_url=$(jq -er '.url' <<< "$release")
+          timestamp=$(jq -er '.publishedAt | select(length > 0)' <<< "$release")
+          source_url=$(jq -er --arg asset "$ASSET" '.assets[] | select(.name == $asset) | .url' <<< "$release")
+
+          # On a rerun, hash the published asset, not the newly built copy.
+          gh release download "$tag" --pattern "$ASSET" --dir "$RUNNER_TEMP/published"
+          checksum=$(md5sum "$RUNNER_TEMP/published/$ASSET" | cut -d ' ' -f 1)
+
+          endpoint="repos/$GH_REPO/contents/manifest.json"
+          manifest=$(gh api "$endpoint?ref=main")
+          jq -er '.content' <<< "$manifest" | base64 --decode > "$RUNNER_TEMP/manifest.old.json"
+          jq -e --arg version "$VERSION" --arg abi "$ABI" --arg url "$source_url" \
+            --arg checksum "$checksum" --arg timestamp "$timestamp" --arg release "$release_url" '
+            {
+              version: $version, targetAbi: $abi, sourceUrl: $url, checksum: $checksum,
+              timestamp: $timestamp, changelog: ("[Release notes](" + $release + ")")
+            } as $entry |
+            .[0].versions |= (
+              if any(.[]; .version == $version) then
+                if any(.[]; . == $entry) then . else error("Version is already listed with different metadata") end
+              else
+                . + [$entry] | sort_by(.version | split(".") | map(tonumber)) | reverse
+              end
+            )
+          ' "$RUNNER_TEMP/manifest.old.json" > "$RUNNER_TEMP/manifest.json"
+
+          if ! cmp -s "$RUNNER_TEMP/manifest.old.json" "$RUNNER_TEMP/manifest.json"; then
+            gh api --method PUT "$endpoint" \
+              -f branch=main -f message="chore: update Jellyfin manifest for $tag" \
+              -f sha="$(jq -er '.sha' <<< "$manifest")" \
+              -f content="$(base64 -w 0 "$RUNNER_TEMP/manifest.json")" --silent
+          fi

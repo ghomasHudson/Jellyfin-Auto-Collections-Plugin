@@ -1,0 +1,11 @@
+[
+  {
+    "guid": "3290c5ef-9e20-4cdf-ab34-87e9021bcc34",
+    "name": "Magic Collections",
+    "overview": "Populate Jellyfin collections from external lists",
+    "description": "Sync public movie and TV lists to managed collections in your Jellyfin library.",
+    "owner": "ghomasHudson",
+    "category": "General",
+    "versions": []
+  }
+]
