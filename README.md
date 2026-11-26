@@ -26,27 +26,12 @@ Jellyfin plugin to make and update collections based on internet lists such as I
 2. Open **Dashboard → Scheduled Tasks → Sync Magic Collections**. The default trigger is daily at 03:00 server time. Select **Run now** to run the same task immediately.
 3. If the task fails, check the task result or Jellyfin server log.
 
-## Supported List Sources
+### Supported List Sources
 
 - Letterboxd - public lists (`https://letterboxd.com/official/list/letterboxds-top-500-films/`)
 - mdblist - e.g. [Top Movies of the week](https://mdblist.com/lists/garycrawfordgc/top-movies-of-the-week)
 - [Steven Lu Popular movies](https://github.com/sjlu/popular-movies)
 - [BFI](https://www.bfi.org.uk/articles/type/lists)
-
-### MDBList
-
-Use the URL from your browser, not a `/json` export URL. The plugin supports public user lists and official movie and show lists, for example:
-
-- <https://mdblist.com/lists/garycrawfordgc/top-movies>
-- <https://mdblist.com/lists/official/movies/popular>
-
-The regular `streaming-charts` list works. The interactive JustWatch charts (`justwatch-streaming-charts`) do not, because their JSON export ignores the chart filters.
-
-### Letterboxd
-
-Use a public custom list URL in the form `https://letterboxd.com/<member>/list/<slug>/`, without a query string or fragment Private lists, watchlists, liked films, short links, and filtered or sorted views are not supported.
-
-To refresh cached Letterboxd film IDs, run **Dashboard → Scheduled Tasks → Clear Magic Collections Cache**. The task has no default schedule. It leaves your collections untouched and does not start a sync; the next sync fetches the IDs again.
 
 ### Not yet supported
 
