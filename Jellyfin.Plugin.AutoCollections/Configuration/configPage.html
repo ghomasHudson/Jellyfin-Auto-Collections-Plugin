@@ -15,26 +15,26 @@
                 const pluginId = '3290c5ef-9e20-4cdf-ab34-87e9021bcc34';
                 const page = document.querySelector('#autoCollectionsPage');
                 const urls = page.querySelector('textarea');
-                page.addEventListener('pageshow', async () => {
+                async function withConfiguration(action) {
                     Dashboard.showLoadingMsg();
                     try {
                         const config = await ApiClient.getPluginConfiguration(pluginId);
-                        urls.value = (config.SourceUrls || []).join('\n');
+                        await action(config);
                     } finally {
                         Dashboard.hideLoadingMsg();
                     }
-                });
-                page.querySelector('form').addEventListener('submit', async event => {
+                }
+
+                page.addEventListener('pageshow', () => withConfiguration(config => {
+                    urls.value = (config.SourceUrls || []).join('\n');
+                }));
+                page.querySelector('form').addEventListener('submit', event => {
                     event.preventDefault();
-                    Dashboard.showLoadingMsg();
-                    try {
-                        const config = await ApiClient.getPluginConfiguration(pluginId);
+                    return withConfiguration(async config => {
                         config.SourceUrls = urls.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
                         const result = await ApiClient.updatePluginConfiguration(pluginId, config);
                         Dashboard.processPluginConfigurationUpdateResult(result);
-                    } finally {
-                        Dashboard.hideLoadingMsg();
-                    }
+                    });
                 });
             })();
         </script>
