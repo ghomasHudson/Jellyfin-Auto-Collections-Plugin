@@ -1,7 +1,6 @@
-<img height="200" alt="image" src="https://github.com/user-attachments/assets/06681ad8-0ca4-4b78-b423-9fa34639a2ff" />
+<img height="400" alt="image" src="https://github.com/user-attachments/assets/06681ad8-0ca4-4b78-b423-9fa34639a2ff" />
 
-
-<img width="829" height="412" alt="image" src="https://github.com/user-attachments/assets/ea0bad46-a704-471d-b4bc-a9a8e2cda694" />
+<img width="812" height="383" alt="image" src="https://github.com/user-attachments/assets/4849512f-e9a5-4a41-89c2-ad1a49f0f922" />
 
 WIP attempt to take the lessons learned from [Jellyfin-Auto-Collections](https://github.com/ghomasHudson/Jellyfin-Auto-Collections) and turn it into a native jellyfin plugin.
 
