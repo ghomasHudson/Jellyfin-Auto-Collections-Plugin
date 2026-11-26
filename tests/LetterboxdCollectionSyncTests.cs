@@ -60,6 +60,28 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task Resolves_a_Letterboxd_film_alias_on_a_later_page_without_matching_its_local_ID()
+    {
+        const string pageTwo = ListPath + "page/2/";
+        const string filmAlias = "/film/film:42611/";
+        RecordHtml(ListPath, ListPage(ListPath, 2, Poster(0, MoviePath), pageTwo));
+        RecordHtml(pageTwo, ListPage(pageTwo, 2, Poster(1, filmAlias)));
+        RecordHtml(MoviePath, Fixture("letterboxd-movie.html"));
+        RecordHtml(filmAlias, Fixture("letterboxd-movie.html")
+            .Replace(MoviePath, filmAlias)
+            .Replace("496243", "15083")
+            .Replace("tt6751668", "tt0426155"));
+        var movie = AddMedia(SourceMediaType.Movie, "Tmdb", "496243");
+        var aliasedMovie = AddMedia(SourceMediaType.Movie, "Imdb", "tt0426155");
+        AddMedia(SourceMediaType.Movie, "Tmdb", "42611");
+
+        await SyncListAsync();
+
+        Assert.Equal(new[] { movie, aliasedMovie }.Order(), Assert.Single(_library.ManagedCollections).Members.Order());
+        Assert.Equal([ListUrl, Origin + pageTwo, Origin + MoviePath, Origin + filmAlias], _responses.Requests);
+    }
+
+    [Fact]
     public async Task Accepts_a_confirmed_public_empty_list()
     {
         RecordHtml(ListPath, ListPage(ListPath, 0, ""));
@@ -290,6 +312,8 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
     [InlineData(false, "/alex_test/watchlist/")]
     [InlineData(false, "/film/../film/the-example/")]
     [InlineData(false, "/film/the-example/?next=1")]
+    [InlineData(false, "/film/list:42611/")]
+    [InlineData(false, "/film/film:42611/extra/")]
     public async Task Rejects_links_outside_the_expected_list_or_film_route_without_fetching_them(bool pagination, string link)
     {
         RecordHtml(ListPath, pagination

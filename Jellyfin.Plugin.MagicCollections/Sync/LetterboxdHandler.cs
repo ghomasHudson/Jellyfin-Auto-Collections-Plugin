@@ -10,7 +10,8 @@ public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
 {
     private const string Origin = "https://letterboxd.com";
     private static readonly Regex ListPath = new(@"\A/[a-z0-9_]+/list/[a-z0-9_-]+/\z", RegexOptions.NonBacktracking);
-    private static readonly Regex FilmPath = new(@"\A/film/[a-z0-9_-]+/\z", RegexOptions.NonBacktracking);
+    // Some public list entries link to a Letterboxd-local film alias instead of a slug.
+    private static readonly Regex FilmPath = new(@"\A/film/(?:[a-z0-9_-]+|film:[1-9][0-9]*)/\z", RegexOptions.NonBacktracking);
     private static readonly Regex TmdbPath = new(@"\A/(movie|tv)/([1-9][0-9]*)/?\z", RegexOptions.NonBacktracking);
     private static readonly Regex ImdbPath = new(@"\A/title/(tt[0-9]{7,})(?:/maindetails)?/?\z", RegexOptions.NonBacktracking);
     private static readonly Regex ListCount = new(
