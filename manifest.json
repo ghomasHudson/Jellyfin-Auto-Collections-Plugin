@@ -6,6 +6,7 @@
     "description": "Sync public movie and TV lists to managed collections in your Jellyfin library.",
     "owner": "ghomasHudson",
     "category": "General",
+    "imageUrl": "https://raw.githubusercontent.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/main/logo.png",
     "versions": [
       {
         "version": "0.1.1.0",
