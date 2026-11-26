@@ -70,6 +70,21 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
         Assert.Empty(_library.ManagedCollections);
     }
 
+    [Fact]
+    public async Task Syncs_distinct_list_entries_that_link_to_the_same_film()
+    {
+        const string pageTwo = ListPath + "page/2/";
+        RecordHtml(ListPath, ListPage(ListPath, 2, Poster(0, MoviePath), pageTwo));
+        RecordHtml(pageTwo, ListPage(pageTwo, 2, Poster(1, MoviePath)));
+        RecordHtml(MoviePath, Fixture("letterboxd-movie.html"));
+        var movie = AddMedia(SourceMediaType.Movie, "Tmdb", "496243");
+
+        await SyncListAsync();
+
+        Assert.Equal([movie], Assert.Single(_library.ManagedCollections).Members);
+        Assert.Equal([ListUrl, Origin + pageTwo, Origin + MoviePath], _responses.Requests);
+    }
+
     [Theory]
     [InlineData("private list")]
     [InlineData("challenge")]
@@ -78,6 +93,7 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
     [InlineData("changed count")]
     [InlineData("missing poster")]
     [InlineData("shifted index")]
+    [InlineData("repeated entry")]
     [InlineData("truncated HTML")]
     public async Task Leaves_the_managed_collection_untouched_if_list_membership_cannot_be_verified(string failure)
     {
@@ -93,6 +109,7 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
             "changed count" => (firstPage, ListPage(pageTwo, 1, "")),
             "missing poster" => (firstPage, ListPage(pageTwo, 2, """<li class="posteritem" data-object-id="filmListEntry:901"></li>""")),
             "shifted index" => (firstPage, ListPage(pageTwo, 2, Poster(2, MoviePath))),
+            "repeated entry" => (firstPage, ListPage(pageTwo, 2, Poster(1, MoviePath, entryId: 900))),
             "truncated HTML" => (firstPage, secondPage[..secondPage.IndexOf("<footer", StringComparison.Ordinal)]),
             _ => throw new ArgumentException(failure)
         };
@@ -126,16 +143,17 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task Can_use_an_Imdb_link_when_the_detail_page_contains_a_valid_typed_Tmdb_ID()
+    public async Task Ignores_the_Imdb_link_when_only_the_body_claims_a_media_type()
     {
         RecordHtml(ListPath, ListPage(ListPath, 1, Poster(0, MoviePath)));
         RecordHtml(MoviePath, Fixture("letterboxd-movie.html")
             .Replace(MovieProviderLink, ""));
-        var movie = AddMedia(SourceMediaType.Movie, "Imdb", "tt6751668");
+        AddMedia(SourceMediaType.Movie, "Imdb", "tt6751668");
+        AddMedia(SourceMediaType.Movie, "Tmdb", "496243");
 
         await SyncListAsync();
 
-        Assert.Equal([movie], Assert.Single(_library.ManagedCollections).Members);
+        Assert.Empty(_library.ManagedCollections);
     }
 
     [Theory]
@@ -146,7 +164,7 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
     [InlineData("wrong film")]
     [InlineData("truncated HTML")]
     [InlineData("connection failed")]
-    public async Task Leaves_the_managed_collection_untouched_when_a_detail_page_fails_after_a_valid_match(string problem)
+    public async Task Leaves_the_managed_collection_untouched_when_a_detail_page_fails_after_a_valid_source_list_entry(string problem)
     {
         const string failingFilmPath = "/film/failing-film/";
         RecordHtml(ListPath, ListPage(ListPath, 2, Poster(0, MoviePath) + Poster(1, failingFilmPath)));
@@ -226,6 +244,19 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
         var series = AddMedia(SourceMediaType.Series, "Tmdb", "87108");
         AddMedia(SourceMediaType.Movie, "Tmdb", "496243");
         AddMedia(SourceMediaType.Movie, "Imdb", "tt6751668");
+
+        await SyncListAsync();
+
+        Assert.Equal([series], Assert.Single(_library.ManagedCollections).Members);
+    }
+
+    [Fact]
+    public async Task Matches_by_provider_ID_when_the_film_page_provider_links_move_out_of_the_footer()
+    {
+        const string seriesPath = "/film/the-example-series/";
+        RecordHtml(ListPath, ListPage(ListPath, 1, Poster(0, seriesPath)));
+        RecordHtml(seriesPath, Fixture("letterboxd-series.html").Replace("text-link text-footer", "production-provider-links"));
+        var series = AddMedia(SourceMediaType.Series, "Imdb", "tt7366338");
 
         await SyncListAsync();
 
@@ -321,9 +352,9 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
         </body></html>
         """;
 
-    private static string Poster(int index, string link) =>
+    private static string Poster(int index, string link, int? entryId = null) =>
         $$"""
-        <li class="posteritem" data-object-id="filmListEntry:{{900 + index}}">
+        <li class="posteritem" data-object-id="filmListEntry:{{entryId ?? (900 + index)}}">
           <div class="react-component" data-component-class="LazyPoster"
             data-item-name="The Example" data-item-link="{{link}}" data-list-index="{{index}}"></div>
         </li>

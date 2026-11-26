@@ -57,56 +57,40 @@ public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
         string? name = null;
         var filmPaths = new List<string>();
         var uniqueFilmPaths = new HashSet<string>(StringComparer.Ordinal);
+        var entryIds = new HashSet<string>(StringComparer.Ordinal);
         while (true)
         {
-            var listPage = await FetchPageAsync(url, pagePath, cancellationToken).ConfigureAwait(false);
-            var pageName = listPage.QuerySelector("main #userpanel[data-component-class=ListSidebar][data-list-type=public]")
-                ?.GetAttribute("data-list-name")?.Trim();
-            var grid = listPage.QuerySelector(ListContent);
-            if (Meta(listPage, """meta[property="og:type"]""") != "letterboxd:list" ||
-                !IsPage(listPage, pagePath) || grid is null || string.IsNullOrEmpty(pageName) ||
-                (name is not null && name != pageName))
+            var document = await FetchPageAsync(url, pagePath, cancellationToken).ConfigureAwait(false);
+            var page = ParseListPage(document, url, pagePath);
+            if ((name is not null && name != page.Name) || (total is not null && total != page.Total))
             {
-                throw InvalidPage(url, pagePath, "expected the public list page");
+                throw InvalidPage(url, pagePath, "the list name or size changed between pages");
             }
-
-            var count = ListCount.Match(Meta(listPage, "meta[name=description]") ?? "");
-            if (!count.Success || !int.TryParse(count.Groups[1].Value, NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var pageTotal) ||
-                (total is not null && total != pageTotal))
-            {
-                throw InvalidPage(url, pagePath, "missing or inconsistent list size");
-            }
-            name ??= pageName;
-            total ??= pageTotal;
+            name ??= page.Name;
+            total ??= page.Total;
 
             // Check positional membership independently of the distinct detail URLs. A missing
             // row must not silently turn into fewer verified movies or an apparently empty list.
-            var rows = grid.QuerySelectorAll("ul.poster-list > li.posteritem");
-            if (rows.Length > total.Value - seen || (rows.Length == 0 && total != 0))
+            if (page.Entries.Count > total.Value - seen || (page.Entries.Count == 0 && total != 0))
             {
                 throw InvalidPage(url, pagePath, "unexpected number of entries");
             }
-            foreach (var row in rows)
+            foreach (var entry in page.Entries)
             {
-                var posters = row.Children.Where(c => c.GetAttribute("data-component-class") == "LazyPoster").ToArray();
-                var link = posters.Length == 1 ? posters[0].GetAttribute("data-item-link") : null;
-                if (string.IsNullOrWhiteSpace(row.GetAttribute("data-object-id")) ||
-                    link is null || !FilmPath.IsMatch(link) ||
-                    posters[0].GetAttribute("data-list-index") != seen.ToString(CultureInfo.InvariantCulture))
+                if (entry.Index != seen || !entryIds.Add(entry.Id))
                 {
-                    throw InvalidPage(url, pagePath, "invalid or missing list entry");
+                    throw InvalidPage(url, pagePath, "unexpected entry position or repeated list entry");
                 }
                 seen++;
-                if (uniqueFilmPaths.Add(link))
+                if (uniqueFilmPaths.Add(entry.FilmPath))
                 {
-                    filmPaths.Add(link);
+                    filmPaths.Add(entry.FilmPath);
                 }
             }
 
-            var next = grid.QuerySelectorAll("div.pagination a.next");
             if (seen == total)
             {
-                if (next.Length != 0)
+                if (page.NextLink is not null)
                 {
                     throw InvalidPage(url, pagePath, "unexpected extra page");
                 }
@@ -114,13 +98,56 @@ public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
             }
 
             var expectedNext = $"{url.AbsolutePath}page/{(++pageNumber).ToString(CultureInfo.InvariantCulture)}/";
-            var nextLink = next.Length == 1 ? next[0].GetAttribute("href") : null;
-            if (nextLink != expectedNext && nextLink != Origin + expectedNext)
+            if (page.NextLink != expectedNext && page.NextLink != Origin + expectedNext)
             {
                 throw InvalidPage(url, pagePath, "missing or invalid next page link");
             }
             pagePath = expectedNext;
         }
+    }
+
+    private sealed record ListEntry(string Id, int Index, string FilmPath);
+
+    private sealed record ListPage(string Name, int Total, List<ListEntry> Entries, string? NextLink);
+
+    private static ListPage ParseListPage(IDocument document, Uri source, string path)
+    {
+        var name = document.QuerySelector("main #userpanel[data-component-class=ListSidebar][data-list-type=public]")
+            ?.GetAttribute("data-list-name")?.Trim();
+        var grid = document.QuerySelector(ListContent);
+        if (Meta(document, """meta[property="og:type"]""") != "letterboxd:list" ||
+            !IsPage(document, path) || grid is null || string.IsNullOrEmpty(name))
+        {
+            throw InvalidPage(source, path, "expected the public list page");
+        }
+
+        var count = ListCount.Match(Meta(document, "meta[name=description]") ?? "");
+        if (!count.Success || !int.TryParse(count.Groups[1].Value, NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var total))
+        {
+            throw InvalidPage(source, path, "missing or invalid list size");
+        }
+
+        var entries = new List<ListEntry>();
+        foreach (var row in grid.QuerySelectorAll("ul.poster-list > li.posteritem"))
+        {
+            var posters = row.Children.Where(c => c.GetAttribute("data-component-class") == "LazyPoster").ToArray();
+            var link = posters.Length == 1 ? posters[0].GetAttribute("data-item-link") : null;
+            var id = row.GetAttribute("data-object-id");
+            if (string.IsNullOrWhiteSpace(id) || link is null || !FilmPath.IsMatch(link) ||
+                !int.TryParse(posters[0].GetAttribute("data-list-index"), NumberStyles.None, CultureInfo.InvariantCulture, out var index))
+            {
+                throw InvalidPage(source, path, "invalid or missing list entry");
+            }
+            entries.Add(new(id, index, link));
+        }
+
+        var nextLinks = grid.QuerySelectorAll("div.pagination a.next");
+        var nextLink = nextLinks.Length == 1 ? nextLinks[0].GetAttribute("href") : null;
+        if (nextLinks.Length != 0 && string.IsNullOrEmpty(nextLink))
+        {
+            throw InvalidPage(source, path, "invalid next page link");
+        }
+        return new(name, total, entries, nextLink);
     }
 
     private static string? Meta(IDocument page, string selector) =>
@@ -131,7 +158,7 @@ public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
         page.QuerySelector("main#content") is not null && page.QuerySelector("footer#page-footer") is not null;
 
     private static SourceListReadException InvalidPage(Uri source, string path, string reason) =>
-        new(source, $"Invalid Letterboxd page {path}: {reason}.", new FormatException(reason));
+        new(source, $"Invalid Letterboxd page {path}: {reason}.");
 
     private async Task<IDocument> FetchPageAsync(Uri source, string path, CancellationToken cancellationToken)
     {
@@ -172,51 +199,31 @@ public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
 
     private static MediaIdentity? ReadIdentity(IDocument film)
     {
-        var links = film.QuerySelectorAll("main #film-page-wrapper p.text-footer a[data-track-action]");
-        var tmdbLinks = ProviderLinks(links, "TMDB");
-        if (ReadTmdb(film, tmdbLinks) is not { } tmdb)
+        var links = film.QuerySelectorAll("main #film-page-wrapper a[data-track-action]");
+        var tmdb = MatchProviderPath(ProviderLinks(links, "TMDB"), "themoviedb.org", TmdbPath);
+        if (!tmdb.Success)
         {
             return null;
         }
 
-        var ids = new Dictionary<string, string> { ["Tmdb"] = tmdb.Id };
-        var imdb = ProviderLink(ProviderLinks(links, "IMDb"), "imdb.com", ImdbPath);
+        // Letterboxd can label a series as a movie in its general metadata.
+        // The type comes from the TMDb link's explicit movie or TV namespace.
+        var type = tmdb.Groups[1].Value == "tv" ? SourceMediaType.Series : SourceMediaType.Movie;
+        var ids = new Dictionary<string, string> { ["Tmdb"] = tmdb.Groups[2].Value };
+        var imdb = MatchProviderPath(ProviderLinks(links, "IMDb"), "imdb.com", ImdbPath);
         if (imdb.Success)
         {
             ids["Imdb"] = imdb.Groups[1].Value;
         }
 
-        return new(tmdb.Type, ids);
+        return new(type, ids);
     }
-
-    private static (SourceMediaType Type, string Id)? ReadTmdb(IDocument film, string?[] links)
-    {
-        if (links.Length != 0)
-        {
-            var match = ProviderLink(links, "themoviedb.org", TmdbPath);
-            return match.Success && IsTmdbId(match.Groups[2].Value) && ReadTmdbType(match.Groups[1].Value) is { } type
-                ? (type, match.Groups[2].Value)
-                : null;
-        }
-
-        // Letterboxd can emit data-tmdb-type="movie" even for series. Never use
-        // that marker without a valid ID, or in preference to a direct provider link.
-        return film.Body?.GetAttribute("data-tmdb-id") is { } id && IsTmdbId(id) &&
-            ReadTmdbType(film.Body.GetAttribute("data-tmdb-type")) is { } bodyType ? (bodyType, id) : null;
-    }
-
-    private static SourceMediaType? ReadTmdbType(string? type) => type switch
-    {
-        "movie" => SourceMediaType.Movie,
-        "tv" => SourceMediaType.Series,
-        _ => null
-    };
 
     private static string?[] ProviderLinks(IEnumerable<IElement> links, string action) =>
         links.Where(link => string.Equals(link.GetAttribute("data-track-action"), action, StringComparison.OrdinalIgnoreCase))
             .Select(link => link.GetAttribute("href")).Distinct(StringComparer.Ordinal).ToArray();
 
-    private static Match ProviderLink(string?[] hrefs, string host, Regex path)
+    private static Match MatchProviderPath(string?[] hrefs, string host, Regex path)
     {
         return hrefs.Length == 1 && Uri.TryCreate(hrefs[0], UriKind.Absolute, out var link) &&
             (link.Scheme == "https" || (host == "imdb.com" && link.Scheme == "http")) &&
@@ -225,7 +232,4 @@ public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
             ? path.Match(link.AbsolutePath)
             : Match.Empty;
     }
-
-    private static bool IsTmdbId(string id) =>
-        int.TryParse(id, NumberStyles.None, CultureInfo.InvariantCulture, out var number) && number > 0;
 }

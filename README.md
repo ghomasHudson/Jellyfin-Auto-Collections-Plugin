@@ -48,7 +48,7 @@ The regular `streaming-charts` list works. The interactive JustWatch charts (`ju
 
 Use a public custom list URL in the form `https://letterboxd.com/<member>/list/<slug>/`, including the trailing slash and without a query string or fragment. For example, <https://letterboxd.com/jf_auto_collect/list/test_list/>. Private lists, watchlists, liked films, short links, and filtered or sorted views are not supported.
 
-The plugin reads the public list and film HTML without signing in or calling an API. It skips entries without a verified IMDb or TMDb ID and a known media type. It never matches by title alone. If a page is blocked or incomplete, the plugin leaves the managed collection unchanged.
+The plugin reads the public list and film pages without signing in or calling an API. A film page must link to a TMDb movie or series to establish its media type. Jellyfin can then match by TMDb or IMDb ID, never by title alone. If a page is blocked or incomplete, the plugin leaves the managed collection unchanged.
 
 ### Not yet supported
 
@@ -86,7 +86,7 @@ Install the **.NET 9 SDK**, version 9.0.200 or later in the 9.0 series. On Linux
 dotnet test MagicCollections.slnx -c Release
 ```
 
-This builds the plugin and runs the tests. Stop Jellyfin and create a `MagicCollections` directory under the server’s `plugins` directory. Copy both `Jellyfin.Plugin.MagicCollections.dll` and `AngleSharp.dll` from `Jellyfin.Plugin.MagicCollections/bin/Release/net9.0/` into that directory, then start Jellyfin again.
+This builds the plugin and runs the tests. Stop Jellyfin and create a `MagicCollections` directory under the server’s `plugins` directory. Copy `Jellyfin.Plugin.MagicCollections.dll` and `AngleSharp.dll` from `Jellyfin.Plugin.MagicCollections/bin/Release/net9.0/` and `LICENSE.AngleSharp` from the repository root into that directory, then start Jellyfin again.
 
 ## Contributing
 
@@ -154,7 +154,7 @@ The container adds a **Magic Collections Test Movies** library for `/test-media`
 4. Open **Collections** in Jellyfin. Check for the matching item and the black poster with the collection name in white.
 5. Set a custom poster for the collection. Run the task again and confirm it keeps your poster.
 
-After editing the plugin, rerun `docker compose up --build -d` to install the rebuilt DLL.
+After editing the plugin, rerun `docker compose up --build -d` to install the rebuilt plugin.
 
 - Run `docker compose down` to stop Jellyfin and keep your settings.
 - Run `docker compose down -v` to stop Jellyfin and delete the sandbox's configuration and cache.
