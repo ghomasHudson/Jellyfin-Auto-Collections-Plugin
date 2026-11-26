@@ -1,8 +1,11 @@
 # Jellyfin Auto Collections
 
-This native plugin brings [Jellyfin Auto Collections](https://github.com/ghomasHudson/Jellyfin-Auto-Collections) into Jellyfin’s dashboard. Admins configure source list URLs. A scheduled task adds matching movies and series to each list’s managed collection.
+<img width="872" height="485" alt="image" src="https://github.com/user-attachments/assets/12843847-4166-4a5a-82ca-07839e264ac8" />
 
-**This version has no live site handler.** You can save URLs and run the task, but every URL will produce an “Unsupported source list URL” warning in the server log. The automated tests use a test-only handler to exercise collection updates. See [the MDBList ticket](https://github.com/ghomasHudson/Jellyfin-Auto-Collections-Plugin/issues/2) for the first planned handler.
+WIP attempt to take the lessons learned from [Jellyfin-Auto-Collections](https://github.com/ghomasHudson/Jellyfin-Auto-Collections) and turn it into a native jellyfin plugin.
+
+Will publish it as a proper plugin when it's further along.
+
 
 ## Build and install
 
