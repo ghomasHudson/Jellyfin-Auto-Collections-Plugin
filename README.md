@@ -1,4 +1,5 @@
-# Jellyfin Magic Collections Plugin
+<img height="200" alt="image" src="https://github.com/user-attachments/assets/06681ad8-0ca4-4b78-b423-9fa34639a2ff" />
+
 
 <img width="829" height="412" alt="image" src="https://github.com/user-attachments/assets/ea0bad46-a704-471d-b4bc-a9a8e2cda694" />
 
