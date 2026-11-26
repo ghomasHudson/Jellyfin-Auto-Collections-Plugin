@@ -9,7 +9,7 @@ namespace Jellyfin.Plugin.MagicCollections.Sync;
 public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
 {
     private const string Origin = "https://letterboxd.com";
-    private static readonly Regex ListPath = new(@"\A/[a-z0-9_]+/list/[a-z0-9_-]+/\z", RegexOptions.NonBacktracking);
+    private static readonly Regex ListPath = new(@"\A/[a-z0-9_]+/list/[a-z0-9_-]+/?\z", RegexOptions.NonBacktracking);
     // Some public list entries link to a Letterboxd-local film alias instead of a slug.
     private static readonly Regex FilmPath = new(@"\A/film/(?:[a-z0-9_-]+|film:[1-9][0-9]*)/\z", RegexOptions.NonBacktracking);
     private static readonly Regex TmdbPath = new(@"\A/(movie|tv)/([1-9][0-9]*)/?\z", RegexOptions.NonBacktracking);
@@ -22,6 +22,9 @@ public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
     public bool Supports(Uri url) => url.IsAbsoluteUri && url.OriginalString == Origin + url.AbsolutePath &&
         ListPath.IsMatch(url.AbsolutePath);
 
+    public Uri GetCanonicalUrl(Uri url) =>
+        Supports(url) && !url.AbsolutePath.EndsWith('/') ? new Uri(url.AbsoluteUri + "/") : url;
+
     public async Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken)
     {
         if (!Supports(url))
@@ -29,7 +32,8 @@ public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
             throw new ArgumentException("Not a public Letterboxd list URL.", nameof(url));
         }
 
-        var (name, description, filmPaths) = await ReadListPagesAsync(url, cancellationToken).ConfigureAwait(false);
+        var listPath = GetCanonicalUrl(url).AbsolutePath;
+        var (name, description, filmPaths) = await ReadListPagesAsync(url, listPath, cancellationToken).ConfigureAwait(false);
         var items = new List<MediaIdentity>();
         foreach (var filmPath in filmPaths)
         {
@@ -49,9 +53,10 @@ public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
         return new(name, items, description);
     }
 
-    private async Task<(string Name, string? Description, List<string> FilmPaths)> ReadListPagesAsync(Uri url, CancellationToken cancellationToken)
+    private async Task<(string Name, string? Description, List<string> FilmPaths)> ReadListPagesAsync(
+        Uri url, string listPath, CancellationToken cancellationToken)
     {
-        var pagePath = url.AbsolutePath;
+        var pagePath = listPath;
         var pageNumber = 1;
         var seen = 0;
         int? total = null;
@@ -104,7 +109,7 @@ public sealed class LetterboxdHandler(HttpClient http) : ISourceListHandler
                 return (name, description, filmPaths);
             }
 
-            var expectedNext = $"{url.AbsolutePath}page/{(++pageNumber).ToString(CultureInfo.InvariantCulture)}/";
+            var expectedNext = $"{listPath}page/{(++pageNumber).ToString(CultureInfo.InvariantCulture)}/";
             if (page.NextLink != expectedNext && page.NextLink != Origin + expectedNext)
             {
                 throw InvalidPage(url, pagePath, "missing or invalid next page link");

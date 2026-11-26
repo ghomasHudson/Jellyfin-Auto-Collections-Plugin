@@ -45,7 +45,7 @@ The regular `streaming-charts` list works. The interactive JustWatch charts (`ju
 
 ### Letterboxd
 
-Use a public custom list URL in the form `https://letterboxd.com/<member>/list/<slug>/`, including the trailing slash and without a query string or fragment. For example, <https://letterboxd.com/jf_auto_collect/list/test_list/>. Private lists, watchlists, liked films, short links, and filtered or sorted views are not supported.
+Use a public custom list URL in the form `https://letterboxd.com/<member>/list/<slug>/`, without a query string or fragment. The trailing slash is optional; both forms sync to the same collection. For example, <https://letterboxd.com/jf_auto_collect/list/test_list/>. Private lists, watchlists, liked films, short links, and filtered or sorted views are not supported.
 
 The plugin reads the public list and film pages without signing in or calling an API. A film page must link to a TMDb movie or series to establish its media type. Jellyfin can then match by TMDb or IMDb ID, never by title alone. If a page is blocked or incomplete, the plugin leaves the managed collection unchanged.
 

@@ -9,5 +9,9 @@ public sealed record SourceList(string? Name, IReadOnlyList<MediaIdentity> Items
 public interface ISourceListHandler
 {
     bool Supports(Uri url);
+
+    // Equivalent source URLs must share the same managed collection tag.
+    Uri GetCanonicalUrl(Uri url) => url;
+
     Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken);
 }

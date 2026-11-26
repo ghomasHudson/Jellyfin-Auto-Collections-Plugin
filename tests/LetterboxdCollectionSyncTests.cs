@@ -63,6 +63,48 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task A_missing_trailing_slash_reuses_the_existing_Letterboxd_collection_and_paginates_normally()
+    {
+        const string pageTwo = ListPath + "page/2/";
+        const string seriesPath = "/film/the-example-series/";
+        RecordHtml(ListPath, ListPage(ListPath, 2, Poster(0, MoviePath), pageTwo));
+        RecordHtml(pageTwo, ListPage(pageTwo, 2, Poster(1, seriesPath)));
+        RecordHtml(MoviePath, Fixture("letterboxd-movie.html"));
+        RecordHtml(seriesPath, Fixture("letterboxd-series.html"));
+        var existing = await _library.CreateAsync("My collection", $"AutoCollections:{ListUrl}");
+        var movie = AddMedia(SourceMediaType.Movie, "Tmdb", "496243");
+        var series = AddMedia(SourceMediaType.Series, "Tmdb", "87108");
+        await _library.AddMembersAsync(existing, [movie]);
+
+        await _sync.RunAsync([ListUrl.TrimEnd('/')], ReportUnexpected, CancellationToken.None);
+
+        var collection = Assert.Single(_library.ManagedCollections);
+        Assert.Equal(existing, collection.Id);
+        Assert.Equal("My collection", collection.Name);
+        Assert.Equal(new[] { movie, series }.Order(), collection.Members.Order());
+        Assert.Equal([ListUrl, Origin + pageTwo, Origin + MoviePath, Origin + seriesPath], _responses.Requests);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Configuring_both_Letterboxd_URL_forms_syncs_one_list_once(bool withSlashFirst)
+    {
+        RecordHtml(ListPath, ListPage(ListPath, 1, Poster(0, MoviePath)));
+        RecordHtml(MoviePath, Fixture("letterboxd-movie.html"));
+        var movie = AddMedia(SourceMediaType.Movie, "Tmdb", "496243");
+        var withoutSlash = ListUrl.TrimEnd('/');
+        string[] urls = withSlashFirst ? [ListUrl, withoutSlash] : [withoutSlash, ListUrl];
+
+        await _sync.RunAsync(urls, ReportUnexpected, CancellationToken.None);
+
+        var collection = Assert.Single(_library.ManagedCollections);
+        Assert.Equal($"AutoCollections:{ListUrl}", collection.Tag);
+        Assert.Equal([movie], collection.Members);
+        Assert.Equal([ListUrl, Origin + MoviePath], _responses.Requests);
+    }
+
+    [Fact]
     public async Task Syncs_every_page_and_matches_whole_series_using_typed_Tmdb_or_Imdb()
     {
         const string pageTwo = ListPath + "page/2/";
@@ -263,7 +305,7 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
             "https://letterboxd.com.example/alex_test/list/weekend_films/",
             "https://user@letterboxd.com/alex_test/list/weekend_films/",
             "https://letterboxd.com:8080/alex_test/list/weekend_films/",
-            "https://letterboxd.com/alex_test/list/weekend_films",
+            ListUrl + "/",
             ListUrl + "?sort=rating",
             ListUrl + "#items",
             ListUrl + "page/2/",
@@ -350,7 +392,9 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
     public void Dispose() => _http.Dispose();
 
     private Task SyncListAsync() =>
-        _sync.RunAsync([ListUrl], unsupported => Assert.Fail($"Unexpected unsupported URL: {unsupported}"), CancellationToken.None);
+        _sync.RunAsync([ListUrl], ReportUnexpected, CancellationToken.None);
+
+    private static void ReportUnexpected(string url) => Assert.Fail($"Unexpected unsupported URL: {url}");
 
     private async Task AssertFailedWithoutChangesAsync()
     {

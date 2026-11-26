@@ -8,6 +8,7 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
         var media = new Lazy<ILookup<MatchKey, Guid>>(() =>
             library.GetMedia().SelectMany(item => Keys(item.Identity), (item, key) => (key, item.Id))
                 .ToLookup(pair => pair.key, pair => pair.Id));
+        var syncedSources = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var url in urls)
         {
@@ -19,13 +20,18 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
                 continue;
             }
 
+            var canonicalUrl = handler.GetCanonicalUrl(source).AbsoluteUri;
+            if (!syncedSources.Add(canonicalUrl))
+            {
+                continue;
+            }
+
             var list = await handler.ReadAsync(source, cancellationToken).ConfigureAwait(false);
             var matches = list.Items.SelectMany(Keys)
                 .SelectMany(key => media.Value[key]).ToHashSet();
 
             cancellationToken.ThrowIfCancellationRequested();
-            // Keep the persisted tag so existing collections still match their source lists.
-            var tag = $"AutoCollections:{source.AbsoluteUri}";
+            var tag = $"AutoCollections:{canonicalUrl}";
             var existing = library.FindByTag(tag);
             if (existing is null && matches.Count == 0)
             {
