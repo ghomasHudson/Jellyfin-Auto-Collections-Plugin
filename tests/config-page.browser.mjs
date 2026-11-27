@@ -84,8 +84,9 @@ async function testPage() {
     try {
         const form = document.querySelector('form');
         const save = form.querySelector('button[type="submit"]');
-        const posterToggle = form.querySelector('summary');
+        const posterToggle = form.querySelector('#magicCollectionsPoster > summary');
         const posterOptions = [...form.querySelectorAll('#magicCollectionsPoster input[type="checkbox"]')];
+        const debugToggle = [...form.querySelectorAll('summary')].find(summary => summary.textContent.trim() === 'Debug');
         const verboseLogging = form.elements.VerboseLogging;
         const visiblePosterOptions = () => posterOptions.filter(option => option.checkVisibility()).length;
         const field = (index = 1) => form.querySelector('input[aria-label="Source list URL ' + index + '"]');
@@ -99,8 +100,11 @@ async function testPage() {
         if (posterToggle?.textContent.trim() !== 'Poster' || visiblePosterOptions() !== 0) {
             throw new Error('The Poster section should start collapsed.');
         }
-        if (verboseLogging?.type !== 'checkbox' || !verboseLogging.checkVisibility() || verboseLogging.checked) {
+        if (verboseLogging?.type !== 'checkbox' || verboseLogging.checked) {
             throw new Error('Verbose logging should be an unchecked checkbox when absent from saved settings.');
+        }
+        if (!debugToggle || verboseLogging.checkVisibility()) {
+            throw new Error('The Debug section should start collapsed and hide verbose logging.');
         }
         await wait(500);
         if (field().value !== unsupported || checked.length || invalid() || borderColor() === red) {
@@ -146,7 +150,11 @@ async function testPage() {
         form.elements.PosterIcon.click();
         posterToggle.click();
         if (visiblePosterOptions() !== 0) throw new Error('Collapsing Poster should hide the options again.');
+        debugToggle.click();
+        if (!verboseLogging.checkVisibility()) throw new Error('Expanding Debug should show verbose logging.');
         verboseLogging.click();
+        debugToggle.click();
+        if (verboseLogging.checkVisibility()) throw new Error('Collapsing Debug should hide verbose logging again.');
         save.click();
         await until(() => saveCount === 1 && saved.SourceUrls.length === 1 && saved.SourceUrls[0] === unsupported, 'Save did not keep the unsupported URL.');
         if (saved.PosterIcon !== false || saved.PosterBackgroundImage !== true || saved.PosterListName !== true) {
@@ -196,6 +204,7 @@ async function testPage() {
         if (field(2)?.value !== '' || field(3)) throw new Error('Clearing an input and leaving it should remove the row.');
         posterToggle.click();
         form.elements.PosterIcon.click();
+        debugToggle.click();
         verboseLogging.click();
         document.querySelector('#magicCollectionsPage').dispatchEvent(new Event('pageshow'));
         await until(() => !form.elements.PosterIcon.checked && verboseLogging.checked, 'Reloading did not restore the saved checkbox states.');

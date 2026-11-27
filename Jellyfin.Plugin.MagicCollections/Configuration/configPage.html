@@ -13,10 +13,10 @@
             #magicCollectionsUrls input[aria-invalid="true"] {
                 border-color: #e53935;
             }
-            #magicCollectionsPoster {
+            #magicCollectionsPage .settingsSection {
                 margin: 1em 0;
             }
-            #magicCollectionsPoster > summary {
+            #magicCollectionsPage .settingsSection > summary {
                 cursor: pointer;
                 font-weight: bold;
             }
@@ -28,7 +28,7 @@
                     <h3 id="magicCollectionsUrlsHeading">Source list URLs</h3>
                     <p class="fieldDescription">Add URLs for supported source lists.</p>
                     <div id="magicCollectionsUrls" role="group" aria-labelledby="magicCollectionsUrlsHeading"></div>
-                    <details id="magicCollectionsPoster">
+                    <details id="magicCollectionsPoster" class="settingsSection">
                         <summary>Poster</summary>
                         <p class="fieldDescription">Choose what to include on new posters. Existing posters are not changed.</p>
                         <div class="checkboxContainer">
@@ -41,10 +41,13 @@
                             <label><input is="emby-checkbox" type="checkbox" name="PosterListName" checked /><span>List name</span></label>
                         </div>
                     </details>
-                    <div class="checkboxContainer">
-                        <label><input is="emby-checkbox" type="checkbox" name="VerboseLogging" aria-describedby="magicCollectionsLoggingDescription" /><span>Enable verbose logging</span></label>
-                        <div id="magicCollectionsLoggingDescription" class="fieldDescription">Include source list and collection update details in the Jellyfin server log during sync.</div>
-                    </div>
+                    <details class="settingsSection">
+                        <summary>Debug</summary>
+                        <div class="checkboxContainer">
+                            <label><input is="emby-checkbox" type="checkbox" name="VerboseLogging" aria-describedby="magicCollectionsLoggingDescription" /><span>Enable verbose logging</span></label>
+                            <div id="magicCollectionsLoggingDescription" class="fieldDescription">Include source list and collection update details in the Jellyfin server log during sync.</div>
+                        </div>
+                    </details>
                     <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
                 </form>
                 <template id="magicCollectionsUrlRow">
