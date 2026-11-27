@@ -1,4 +1,5 @@
 using System.Net;
+using Jellyfin.Plugin.MagicCollections.Configuration;
 using Jellyfin.Plugin.MagicCollections.Sync;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller;
@@ -26,6 +27,7 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
             new CollectionImageClient(services.GetRequiredService<SourceListHttpClient>()));
         serviceCollection.AddSingleton<ISourceListHandler>(services =>
             new BfiHandler(services.GetRequiredService<SourceListHttpClient>()));
+        serviceCollection.AddSingleton<Func<PluginConfiguration>>(() => Plugin.Instance?.Configuration ?? new PluginConfiguration());
         serviceCollection.AddSingleton<ICollectionLibrary, JellyfinCollectionLibrary>();
         serviceCollection.AddSingleton<CollectionSync>();
     }

@@ -1,5 +1,6 @@
 using System.Net.Mime;
 using Jellyfin.Data.Enums;
+using Jellyfin.Plugin.MagicCollections.Configuration;
 using Jellyfin.Plugin.MagicCollections.Sync;
 using MediaBrowser.Controller.Collections;
 using MediaBrowser.Controller.Entities;
@@ -12,7 +13,7 @@ namespace Jellyfin.Plugin.MagicCollections;
 
 internal sealed class JellyfinCollectionLibrary(
     ILibraryManager library, ICollectionManager collections, IProviderManager providers,
-    CollectionImageClient images) : ICollectionLibrary
+    CollectionImageClient images, Func<PluginConfiguration> getConfiguration) : ICollectionLibrary
 {
     public IEnumerable<LibraryMedia> GetMedia()
     {
@@ -82,11 +83,21 @@ internal sealed class JellyfinCollectionLibrary(
             return;
         }
 
+        var config = getConfiguration();
+        if (!config.PosterBackgroundImage && !config.PosterIcon && !config.PosterListName)
+        {
+            return;
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
-        using var logo = await images.TryLoadFaviconAsync(faviconUrls, cancellationToken).ConfigureAwait(false);
-        using var background = await images.TryLoadListImageAsync(listImageUrl, cancellationToken).ConfigureAwait(false);
+        using var logo = config.PosterIcon
+            ? await images.TryLoadFaviconAsync(faviconUrls, cancellationToken).ConfigureAwait(false)
+            : null;
+        using var background = config.PosterBackgroundImage
+            ? await images.TryLoadListImageAsync(listImageUrl, cancellationToken).ConfigureAwait(false)
+            : null;
         cancellationToken.ThrowIfCancellationRequested();
-        using var poster = CollectionPoster.Render(collection.Name, logo, background);
+        using var poster = CollectionPoster.Render(config.PosterListName ? collection.Name : string.Empty, logo, background);
 
         // Jellyfin's SaveImage isn't conditional. Recheck after rendering to narrow the
         // race with an upload, but another writer can still enter after this check.

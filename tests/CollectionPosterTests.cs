@@ -1,6 +1,7 @@
 using System.Net;
 using System.Reflection;
 using Jellyfin.Plugin.MagicCollections;
+using Jellyfin.Plugin.MagicCollections.Configuration;
 using Jellyfin.Plugin.MagicCollections.Sync;
 using MediaBrowser.Controller.Collections;
 using MediaBrowser.Controller.Entities;
@@ -35,6 +36,53 @@ public class CollectionPosterTests
         Assert.Equal(SKColors.Black, poster.GetPixel(0, 0));
         Assert.Equal(SKColors.Black, poster.GetPixel(poster.Width - 1, poster.Height - 1));
         Assert.Contains(SKColors.White, poster.Pixels);
+    }
+
+    [Theory]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    public async Task Omits_only_the_poster_element_that_is_turned_off(bool showBackground, bool showIcon, bool showName)
+    {
+        var collection = new TestCollection { Id = Guid.NewGuid(), Name = "Festival picks" };
+        var config = new PluginConfiguration
+        {
+            PosterBackgroundImage = showBackground,
+            PosterIcon = showIcon,
+            PosterListName = showName
+        };
+        var artwork = EncodeSolidImage(24);
+        var responses = new RecordedHttpResponses();
+        responses.Record(SourceIcon.AbsoluteUri, () => new(HttpStatusCode.OK) { Content = new ByteArrayContent(artwork) });
+        responses.Record(ListImage.AbsoluteUri, () => new(HttpStatusCode.OK) { Content = new ByteArrayContent(artwork) });
+        using var http = new HttpClient(responses);
+        using var host = new JellyfinBoundary(collection, imageHttp: http, config: config);
+
+        await host.Library.EnsurePosterAsync(collection.Id, [SourceIcon], ListImage, CancellationToken.None);
+
+        Assert.Equal(showIcon, responses.Requests.Contains(SourceIcon.AbsoluteUri));
+        Assert.Equal(showBackground, responses.Requests.Contains(ListImage.AbsoluteUri));
+        using var poster = DecodePoster(host);
+        Assert.Equal(showBackground, poster.GetPixel(0, 0) != SKColors.Black);
+        var pixels = poster.Pixels;
+        Assert.Equal(showIcon, pixels.Contains(SKColors.OrangeRed));
+        Assert.Equal(showName, pixels.Contains(SKColors.White));
+    }
+
+    [Fact]
+    public async Task Skips_poster_generation_when_all_poster_elements_are_turned_off()
+    {
+        var collection = new TestCollection { Id = Guid.NewGuid(), Name = "Festival picks" };
+        var config = new PluginConfiguration { PosterBackgroundImage = false, PosterIcon = false, PosterListName = false };
+        var responses = new RecordedHttpResponses();
+        using var http = new HttpClient(responses);
+        using var host = new JellyfinBoundary(collection, imageHttp: http, config: config);
+
+        await host.Library.EnsurePosterAsync(collection.Id, [SourceIcon], ListImage, CancellationToken.None);
+
+        Assert.Empty(responses.Requests);
+        Assert.Empty(collection.ImageInfos);
+        Assert.Null(host.Image);
     }
 
     [Theory]
@@ -476,7 +524,8 @@ public class CollectionPosterTests
         private readonly ServiceProvider _services;
         private readonly TestFiles _files = new();
 
-        public JellyfinBoundary(TestCollection collection, TestCollection? afterFirstRead = null, HttpClient? imageHttp = null)
+        public JellyfinBoundary(TestCollection collection, TestCollection? afterFirstRead = null, HttpClient? imageHttp = null,
+            PluginConfiguration? config = null)
         {
             var firstRead = true;
             var services = new ServiceCollection();
@@ -497,6 +546,10 @@ public class CollectionPosterTests
             if (imageHttp is not null)
             {
                 services.AddSingleton(new CollectionImageClient(imageHttp));
+            }
+            if (config is not null)
+            {
+                services.AddSingleton<Func<PluginConfiguration>>(() => config);
             }
 
             _services = services.BuildServiceProvider();

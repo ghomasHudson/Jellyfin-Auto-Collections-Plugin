@@ -2,7 +2,7 @@
 <html lang="en">
 <head><meta charset="utf-8"><title>Magic Collections</title></head>
 <body>
-    <div id="magicCollectionsPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button,emby-input">
+    <div id="magicCollectionsPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button,emby-checkbox,emby-input">
         <style>
             #magicCollectionsUrls > .inputContainer:not(:last-child) {
                 margin-bottom: .6em;
@@ -21,6 +21,19 @@
                     <h3 id="magicCollectionsUrlsHeading">Source list URLs</h3>
                     <p class="fieldDescription">Add URLs for supported source lists.</p>
                     <div id="magicCollectionsUrls" role="group" aria-labelledby="magicCollectionsUrlsHeading"></div>
+                    <h3 id="magicCollectionsPosterHeading">Poster</h3>
+                    <p class="fieldDescription">Choose what to include on new posters. Existing posters are not changed.</p>
+                    <div role="group" aria-labelledby="magicCollectionsPosterHeading">
+                        <div class="checkboxContainer">
+                            <label><input is="emby-checkbox" type="checkbox" name="PosterBackgroundImage" checked /><span>Background image</span></label>
+                        </div>
+                        <div class="checkboxContainer">
+                            <label><input is="emby-checkbox" type="checkbox" name="PosterIcon" checked /><span>Icon</span></label>
+                        </div>
+                        <div class="checkboxContainer">
+                            <label><input is="emby-checkbox" type="checkbox" name="PosterListName" checked /><span>List name</span></label>
+                        </div>
+                    </div>
                     <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
                 </form>
                 <template id="magicCollectionsUrlRow">
@@ -37,6 +50,7 @@
                 const form = page.querySelector('form');
                 const urls = page.querySelector('#magicCollectionsUrls');
                 const template = page.querySelector('#magicCollectionsUrlRow');
+                const posterOptions = form.querySelectorAll('input[type="checkbox"]');
 
                 // Jellyfin translates template placeholders in the whole page, including inline scripts.
                 function urlLabel(index) {
@@ -110,6 +124,7 @@
 
                 page.addEventListener('pageshow', () => withConfiguration(config => {
                     renderUrls(config.SourceUrls || []);
+                    posterOptions.forEach(option => { option.checked = config[option.name]; });
                 }));
                 // Keep a blank row from collapsing on blur before the Save click completes.
                 form.querySelector('button[type="submit"]').addEventListener('mousedown', event => event.preventDefault());
@@ -117,6 +132,7 @@
                     event.preventDefault();
                     return withConfiguration(async config => {
                         config.SourceUrls = Array.from(urls.querySelectorAll('input'), input => input.value.trim()).filter(Boolean);
+                        posterOptions.forEach(option => { config[option.name] = option.checked; });
                         const result = await ApiClient.updatePluginConfiguration(pluginId, config);
                         renderUrls(config.SourceUrls);
                         Dashboard.processPluginConfigurationUpdateResult(result);
