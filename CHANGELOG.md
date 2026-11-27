@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.6.0.0 (2026-11-27)
+
+### Feat
+
+- **trakt**: import the connected account's watchlist
+- **trakt**: import recommendations and public smart lists
+
 ## v0.5.0.0 (2026-11-27)
 
 ### Feat
