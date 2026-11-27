@@ -73,6 +73,7 @@ public sealed class BfiHandler(HttpClient http) : ISourceListHandler
         return new(name, [], description)
         {
             MoviesByTitleYear = movies,
+            FaviconUrls = SourceImages.ReadFaviconUrls(page, pageUrl),
             ImageUrl = SourceImages.ReadListImageUrl(page, pageUrl, assetHost: "core-cms.bfi.org.uk")
         };
     }

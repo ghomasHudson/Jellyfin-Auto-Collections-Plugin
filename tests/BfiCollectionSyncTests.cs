@@ -38,15 +38,16 @@ public sealed class BfiCollectionSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task Passes_the_BFI_Open_Graph_image_to_the_collection_poster()
+    public async Task Passes_the_BFI_fallback_favicon_and_Open_Graph_image_to_the_collection_poster()
     {
         RecordArticle();
         AddMedia(Title, 1997);
 
         await SyncAsync();
 
-        Assert.Equal(new Uri("https://core-cms.bfi.org.uk/sites/default/files/rainy-day.jpg"),
-            Assert.Single(_library.ManagedCollections).PosterListImageUrl);
+        var collection = Assert.Single(_library.ManagedCollections);
+        Assert.Equal(new Uri("https://www.bfi.org.uk/favicon.ico"), Assert.Single(collection.PosterFaviconUrls));
+        Assert.Equal(new Uri("https://core-cms.bfi.org.uk/sites/default/files/rainy-day.jpg"), collection.PosterListImageUrl);
     }
 
     [Fact]
