@@ -140,9 +140,8 @@ jobs:
             gh release create "$tag" "$RUNNER_TEMP/$ASSET" --verify-tag --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
 
-          release=$(gh release view "$tag" --json isDraft,isPrerelease,publishedAt,url,assets)
-          jq -e '.isDraft == false and .isPrerelease == false' <<< "$release" >/dev/null
-          release_url=$(jq -er '.url' <<< "$release")
+          release=$(gh release view "$tag" --json isDraft,isPrerelease,publishedAt,url,assets,body)
+          jq -e '.isDraft == false and .isPrerelease == false and (.url | length > 0)' <<< "$release" >/dev/null
           timestamp=$(jq -er '.publishedAt | select(length > 0)' <<< "$release")
           source_url=$(jq -er --arg asset "$ASSET" '.assets[] | select(.name == $asset) | .url' <<< "$release")
 
@@ -154,10 +153,14 @@ jobs:
           manifest=$(gh api "$endpoint?ref=main")
           jq -er '.content' <<< "$manifest" | base64 --decode > "$RUNNER_TEMP/manifest.old.json"
           jq -e --arg version "$VERSION" --arg abi "$ABI" --arg url "$source_url" \
-            --arg checksum "$checksum" --arg timestamp "$timestamp" --arg release "$release_url" '
+            --arg checksum "$checksum" --arg timestamp "$timestamp" --argjson release "$release" '
             {
               version: $version, targetAbi: $abi, sourceUrl: $url, checksum: $checksum,
-              timestamp: $timestamp, changelog: ("[Release notes](" + $release + ")")
+              timestamp: $timestamp,
+              changelog: ([
+                (($release.body // "") | sub("\\s+$"; "") | select(length > 0)),
+                "[Release notes on GitHub](\($release.url))"
+              ] | join("\n\n"))
             } as $entry |
             .[0].versions |= (
               if any(.[]; .version == $version) then

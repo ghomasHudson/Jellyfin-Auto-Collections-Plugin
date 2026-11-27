@@ -14,7 +14,7 @@
         "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.3.0.0/magic-collections-0.3.0.0.zip",
         "checksum": "2fdb0d481ce377bffa209967a04c640f",
         "timestamp": "2026-11-27T12:01:57Z",
-        "changelog": "[Release notes](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.3.0.0)"
+        "changelog": "## v0.3.0.0 (2026-11-27)\n\n### Feat\n\n- **sync**: tag collections with their source and list URL\n- **posters**: use source list artwork as the background\n- **posters**: add source favicons to collection posters\n- **bfi**: sync editorial lists by movie title and year\n\n### Fix\n\n- **bfi**: include the site favicon on collection posters\n- **posters**: skip branded MDBList artwork for backgrounds\n- **posters**: normalize artwork before applying an 80% black overlay\n- **bfi**: use Open Graph metadata for collection descriptions\n- **bfi**: distinguish captioned lists from other articles\n\n[Release notes on GitHub](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.3.0.0)"
       },
       {
         "version": "0.2.3.0",
@@ -22,7 +22,7 @@
         "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.2.3.0/magic-collections-0.2.3.0.zip",
         "checksum": "6459e36fc6f55f140530cd84bb8fb3ea",
         "timestamp": "2026-11-26T19:13:50Z",
-        "changelog": "[Release notes](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.2.3.0)"
+        "changelog": "## v0.2.3.0 (2026-11-26)\n\n### Feat\n\n- **letterboxd**: move cache clearing to a manual task\n\n[Release notes on GitHub](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.2.3.0)"
       },
       {
         "version": "0.2.2.0",
@@ -30,7 +30,7 @@
         "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.2.2.0/magic-collections-0.2.2.0.zip",
         "checksum": "9f880a0dd5190ccbc2234448412fde07",
         "timestamp": "2026-11-26T18:53:52Z",
-        "changelog": "[Release notes](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.2.2.0)"
+        "changelog": "## v0.2.2.0 (2026-11-26)\n\n### Feat\n\n- **letterboxd**: cache film IDs until manually cleared\n\n[Release notes on GitHub](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.2.2.0)"
       },
       {
         "version": "0.2.1.0",
@@ -38,7 +38,7 @@
         "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.2.1.0/magic-collections-0.2.1.0.zip",
         "checksum": "65eec97127d24962f095269132876de8",
         "timestamp": "2026-11-26T18:26:43Z",
-        "changelog": "[Release notes](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.2.1.0)"
+        "changelog": "## v0.2.1.0 (2026-11-26)\n\n### Feat\n\n- **sync**: copy source list descriptions to collection overviews (#25)\n\n### Fix\n\n- **sync**: make Letterboxd list trailing slash optional (#26)\n- **sync**: read list descriptions without changing source markup (#25)\n- **sync**: accept Letterboxd film aliases in public lists (#26)\n\n[Release notes on GitHub](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.2.1.0)"
       },
       {
         "version": "0.2.0.0",
@@ -46,7 +46,7 @@
         "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.2.0.0/magic-collections-0.2.0.0.zip",
         "checksum": "b28d7461e9a514c9076b8dec5398d9c7",
         "timestamp": "2026-11-26T18:02:28Z",
-        "changelog": "[Release notes](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.2.0.0)"
+        "changelog": "## v0.2.0.0 (2026-11-26)\n\n### Feat\n\n- **sync**: support Steven Lu Popular Movies feeds\n- **sync**: support public Letterboxd lists\n- **collections**: generate missing collection posters\n- **catalog**: add Magic Collections logo\n- **docker**: preconfigure the Jellyfin test sandbox\n\n### Fix\n\n- **sync**: verify Letterboxd membership and media types (#14)\n- **sync**: persist Popular Movies polling across restarts\n- **collections**: render readable Unicode posters and preserve existing art\n\n[Release notes on GitHub](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.2.0.0)"
       },
       {
         "version": "0.1.1.0",
@@ -54,7 +54,7 @@
         "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.1.1.0/magic-collections-0.1.1.0.zip",
         "checksum": "288f168cc221b82045ce0af3c46b4d25",
         "timestamp": "2026-11-26T14:16:59Z",
-        "changelog": "[Release notes](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.1.1.0)"
+        "changelog": "## v0.1.1.0 (2026-11-26)\n\n[Release notes on GitHub](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.1.1.0)"
       }
     ]
   }
