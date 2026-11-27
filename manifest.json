@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/main/logo.png",
     "versions": [
       {
+        "version": "0.6.0.0",
+        "targetAbi": "10.11.5.0",
+        "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.6.0.0/magic-collections-0.6.0.0.zip",
+        "checksum": "2170ec04ce4adb3e3488d4520b931988",
+        "timestamp": "2026-11-27T21:40:51Z",
+        "changelog": "## v0.6.0.0 (2026-11-27)\n\n### Feat\n\n- **trakt**: import the connected account's watchlist\n- **trakt**: import recommendations and public smart lists\n\n[Release notes on GitHub](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.6.0.0)"
+      },
+      {
         "version": "0.5.0.0",
         "targetAbi": "10.11.5.0",
         "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.5.0.0/magic-collections-0.5.0.0.zip",
