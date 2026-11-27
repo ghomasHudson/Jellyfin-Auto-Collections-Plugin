@@ -34,6 +34,7 @@ Jellyfin plugin to make and update collections based on internet lists such as I
 - mdblist - e.g. [Top Movies of the week](https://mdblist.com/lists/garycrawfordgc/top-movies-of-the-week)
 - [Steven Lu Popular movies](https://github.com/sjlu/popular-movies)
 - [BFI](https://www.bfi.org.uk/articles/type/lists)
+- [IMDb] – public title lists, [Top 250 Movies](https://www.imdb.com/chart/top/), and [Top 250 TV Shows](https://www.imdb.com/chart/toptv/). The first IMDb sync downloads the helper automatically (about 252 MB). You don’t need an IMDb account or a separate browser install.
 - [Trakt public lists and charts](docs/trakt.md)
 
 ### Not yet supported
@@ -41,7 +42,7 @@ Jellyfin plugin to make and update collections based on internet lists such as I
 Follow these issues for the status of other sources from Jellyfin Auto Collections:
 
 - [Criterion Channel](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/18)
-- [IMDb lists and charts](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/13)
+- [IMDb Weekend Box Office](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/13)
 - [Jellyfin library queries](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/21)
 - [ListMania](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/12)
 - [Radarr tags](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/19)
@@ -61,6 +62,8 @@ dotnet test MagicCollections.slnx -c Release
 ```
 
 This builds the plugin and runs the tests. Stop Jellyfin and create a `MagicCollections` directory under the server’s `plugins` directory. Copy `Jellyfin.Plugin.MagicCollections.dll` and `AngleSharp.dll` from `Jellyfin.Plugin.MagicCollections/bin/Release/net9.0/` and `LICENSE.AngleSharp` from the repository root into that directory, then start Jellyfin again.
+
+For IMDb sync, install a release from the plugin repository. A local build does not include the released helper by default.
 
 ## Contributing
 

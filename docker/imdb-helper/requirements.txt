@@ -1,0 +1,7 @@
+# Linux x86_64 / CPython 3.12 wheel hashes, including Playwright's transitive dependency.
+urlrender==0.1.2 \
+    --hash=sha256:be0edb2079ddb995a23ff142bf6d13ed2b6f8f40c6d25132073624717f1270f2
+playwright==1.65.2 \
+    --hash=sha256:58932d35f56767ab7ebcdd3d4a733bfb3e62a1a5bc43c08e28b9fa9b3e61cf33
+greenlet==3.5.6 \
+    --hash=sha256:975736b002ed080d124cf81a79cb7e05cb26d6b3f5c7a7b651c0fcce70353aa1

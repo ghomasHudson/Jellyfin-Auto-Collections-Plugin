@@ -9,6 +9,8 @@ public sealed class SourceListUrlControllerTests
     [Theory]
     [InlineData("https://mdblist.com/lists/snoak/latest-movies-digital-release", true)]
     [InlineData("https://letterboxd.com/example/list/movies/", true)]
+    [InlineData("https://www.imdb.com/list/ls055592025/", true)]
+    [InlineData("https://www.imdb.com/chart/boxoffice/", false)]
     [InlineData("https://www.bfi.org.uk/lists/10-great-documentaries-that-play-like-thrillers", true)]
     [InlineData("https://popular-movies-data.stevenlu.com/movies.json", true)]
     [InlineData("https://trakt.tv/users/Justin/lists/OPEN-YOUR-EYES/?access_token=fixture-token#items", true)]
