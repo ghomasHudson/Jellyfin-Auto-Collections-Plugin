@@ -4,7 +4,7 @@ Open **Dashboard → Plugins → Magic Collections**. Paste a supported Trakt UR
 
 For public user lists, use `https://app.trakt.tv/users/<user>/lists/<slug>`. Older `https://trakt.tv/users/<user>/lists/<slug>` links also work.
 
-The plugin supports [Popular movies](https://app.trakt.tv/discover/popular?mode=movie), [Popular shows](https://app.trakt.tv/discover/popular?mode=show), [Trending movies](https://app.trakt.tv/discover/trending?mode=movie), and [Trending shows](https://app.trakt.tv/discover/trending?mode=show). Older chart URLs on `trakt.tv` still work: `/movies/popular`, `/shows/popular`, `/movies/trending`, and `/shows/trending`.
+The plugin supports the unfiltered [Popular movies](https://app.trakt.tv/discover/popular?mode=movie), [Popular shows](https://app.trakt.tv/discover/popular?mode=show), [Trending movies](https://app.trakt.tv/discover/trending?mode=movie), and [Trending shows](https://app.trakt.tv/discover/trending?mode=show) charts. Older chart URLs on `trakt.tv` still work: `/movies/popular`, `/shows/popular`, `/movies/trending`, and `/shows/trending`.
 
 Try [Open Your Eyes](https://app.trakt.tv/users/justin/lists/open-your-eyes) for a mixed list. The plugin reads every page of a public user list, and up to the first 100 ranked entries of each chart. It matches only movies and whole series already in your Jellyfin library. If a request fails, including a rate limit or an error on a later page, the plugin leaves that collection unchanged for that run. Check the Jellyfin log and wait before retrying.
 
