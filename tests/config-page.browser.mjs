@@ -37,6 +37,8 @@ async function testPage() {
     const unsupported = 'https://letterboxd.com/film/the-matrix/';
     const uncheckable = 'https://letterboxd.com/example/list/check-fails/';
     const delayed = 'https://example.com/delayed';
+    const pastedTraktList = 'https://trakt.tv/users/Justin/lists/OPEN-YOUR-EYES/?access_token=example-token#example-fragment';
+    const cleanTraktList = 'https://app.trakt.tv/users/justin/lists/open-your-eyes';
     const checked = [];
     let saved = { SourceUrls: [unsupported], PosterBackgroundImage: true, PosterIcon: true, PosterListName: true };
     let saveCount = 0;
@@ -47,9 +49,10 @@ async function testPage() {
         processPluginConfigurationUpdateResult() {}
     };
     window.ApiClient = {
-        async getPluginConfiguration() { return { ...saved }; },
+        async getPluginConfiguration() { return structuredClone(saved); },
         async updatePluginConfiguration(_, config) {
-            saved = config;
+            // Jellyfin persists the normalized configuration, returning no config in the POST response.
+            saved = { ...config, SourceUrls: config.SourceUrls.map(url => url === pastedTraktList ? cleanTraktList : url) };
             saveCount++;
         },
         getUrl(path) { return path; },
@@ -86,6 +89,8 @@ async function testPage() {
         const save = form.querySelector('button[type="submit"]');
         const posterToggle = form.querySelector('#magicCollectionsPoster > summary');
         const posterOptions = [...form.querySelectorAll('#magicCollectionsPoster input[type="checkbox"]')];
+        const traktToggle = [...form.querySelectorAll('summary')].find(summary => summary.textContent.trim() === 'Trakt');
+        const traktClientId = form.elements.TraktClientId;
         const debugToggle = [...form.querySelectorAll('summary')].find(summary => summary.textContent.trim() === 'Debug');
         const verboseLogging = form.elements.VerboseLogging;
         const visiblePosterOptions = () => posterOptions.filter(option => option.checkVisibility()).length;
@@ -100,6 +105,19 @@ async function testPage() {
         if (posterToggle?.textContent.trim() !== 'Poster' || visiblePosterOptions() !== 0) {
             throw new Error('The Poster section should start collapsed.');
         }
+        if (!traktToggle || !traktClientId || traktClientId.checkVisibility()) {
+            throw new Error('The Trakt section should start collapsed and hide the Client ID field.');
+        }
+        traktToggle.click();
+        const traktPanel = traktToggle.parentElement;
+        if (!traktPanel.innerText.includes("you don't need to sign in to Trakt or register an app") ||
+                !traktPanel.innerText.includes('Magic Collections uses Trakt but is not endorsed or certified by Trakt') ||
+                !traktClientId.checkVisibility() ||
+                !traktPanel.innerText.includes('Paste only the Client ID, or leave blank to use the bundled ID.')) {
+            throw new Error('Expanding Trakt should show the setup guidance, notice, and optional Client ID field.');
+        }
+        traktToggle.click();
+        if (traktClientId.checkVisibility()) throw new Error('Collapsing Trakt should hide the Client ID field again.');
         if (verboseLogging?.type !== 'checkbox' || verboseLogging.checked) {
             throw new Error('Verbose logging should be an unchecked checkbox when absent from saved settings.');
         }
@@ -218,6 +236,31 @@ async function testPage() {
         verboseLogging.click();
         save.click();
         await until(() => saveCount === 4 && saved.VerboseLogging === false, 'Save did not disable verbose logging.');
+
+        traktToggle.click();
+        const clientId = 'example-trakt-client-id';
+        const checksBeforeOverride = checked.length;
+        if (traktClientId.value !== '') throw new Error('The override should be blank when unset.');
+        enter(traktClientId, '  ' + clientId + '  ');
+        save.click();
+        await until(() => saveCount === 5, 'Save did not accept the Trakt Client ID override.');
+        if (saved.TraktClientId !== clientId || saved.SourceUrls.length !== 1 || saved.SourceUrls[0] !== delayed) {
+            throw new Error('Save should trim the override and store it separately from source list URLs.');
+        }
+        enter(traktClientId, 'unsaved');
+        document.querySelector('#magicCollectionsPage').dispatchEvent(new Event('pageshow'));
+        await until(() => traktClientId.value === clientId, 'Reloading did not restore the saved Client ID.');
+        enter(traktClientId, '  ');
+        save.click();
+        await until(() => saveCount === 6 && saved.TraktClientId === '', 'Saving a blank override should restore the default.');
+        await wait(500);
+        if (checked.length !== checksBeforeOverride) throw new Error('Editing the override should not trigger URL validation.');
+
+        enter(field(2), pastedTraktList);
+        save.click();
+        await until(() => saveCount === 7 && field(2)?.value === cleanTraktList,
+            'Save should display the canonical Trakt URL returned by Jellyfin, without tokens.');
+        if (field().value !== delayed || invalid(2)) throw new Error('Save should keep the other URL and render the canonical Trakt URL normally.');
         result.textContent = 'PASS';
     } catch (error) {
         result.textContent = error.message;
