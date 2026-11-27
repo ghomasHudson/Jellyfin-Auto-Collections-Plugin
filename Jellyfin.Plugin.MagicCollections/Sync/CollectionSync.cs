@@ -4,10 +4,15 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
 {
     public async Task RunAsync(IEnumerable<string> urls, Action<string> reportUnsupported, CancellationToken cancellationToken)
     {
-        // Load once per run, and only if there's a supported source.
-        var media = new Lazy<ILookup<MatchKey, Guid>>(() =>
-            library.GetMedia().SelectMany(item => Keys(item.Identity), (item, key) => (key, item.Id))
+        // Snapshot once per run. Build each index only if a source uses it.
+        var media = new Lazy<LibraryMedia[]>(() => library.GetMedia().ToArray());
+        var mediaByProvider = new Lazy<ILookup<MatchKey, Guid>>(() =>
+            media.Value.SelectMany(item => Keys(item.Identity), (item, key) => (key, item.Id))
                 .ToLookup(pair => pair.key, pair => pair.Id));
+        var moviesByTitleYear = new Lazy<ILookup<MovieTitleYear, Guid>>(() =>
+            media.Value.Where(item => item.Identity.Type == SourceMediaType.Movie &&
+                    !string.IsNullOrWhiteSpace(item.Title) && item.Year is > 0)
+                .ToLookup(item => new MovieTitleYear(item.Title!, item.Year!.Value).MatchKey(), item => item.Id));
         var syncedSources = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var url in urls)
@@ -28,7 +33,15 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
 
             var list = await handler.ReadAsync(source, cancellationToken).ConfigureAwait(false);
             var matches = list.Items.SelectMany(Keys)
-                .SelectMany(key => media.Value[key]).ToHashSet();
+                .SelectMany(key => mediaByProvider.Value[key]).ToHashSet();
+            foreach (var movie in list.MoviesByTitleYear)
+            {
+                var candidates = moviesByTitleYear.Value[movie.MatchKey()].Distinct().Take(2).ToArray();
+                if (candidates.Length == 1)
+                {
+                    matches.Add(candidates[0]);
+                }
+            }
 
             cancellationToken.ThrowIfCancellationRequested();
             var tag = $"AutoCollections:{canonicalUrl}";

@@ -22,6 +22,8 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
             new LetterboxdHandler(services.GetRequiredService<SourceListHttpClient>(),
                 services.GetRequiredService<IApplicationPaths>().DataPath));
         serviceCollection.AddSingleton<ISourceListHandler>(services => services.GetRequiredService<LetterboxdHandler>());
+        serviceCollection.AddSingleton<ISourceListHandler>(services =>
+            new BfiHandler(services.GetRequiredService<SourceListHttpClient>()));
         serviceCollection.AddSingleton<ICollectionLibrary, JellyfinCollectionLibrary>();
         serviceCollection.AddSingleton<CollectionSync>();
     }

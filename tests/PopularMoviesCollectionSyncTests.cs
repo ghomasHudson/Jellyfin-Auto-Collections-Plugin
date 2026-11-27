@@ -40,6 +40,19 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
     }
 
     [Fact]
+    public void Registers_a_Bfi_handler()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IApplicationPaths>(new TestApplicationPaths(_dataPath));
+        new ServiceRegistrator().RegisterServices(services, null!);
+        using var provider = services.BuildServiceProvider();
+
+        var handler = Assert.Single(provider.GetServices<ISourceListHandler>(),
+            h => h.Supports(new("https://www.bfi.org.uk/lists/10-great-documentaries-that-play-like-thrillers")));
+        Assert.IsType<BfiHandler>(handler);
+    }
+
+    [Fact]
     public async Task Syncs_a_recorded_source_list_by_Imdb_and_Tmdb_and_ignores_the_wrong_provider_ID()
     {
         // The first three entries from movies.json on 2026-11-26 (UTC).

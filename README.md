@@ -47,6 +47,8 @@ Here are the supported sites and example URLs:
   - <https://popular-movies-data.stevenlu.com/movies-rottentomatoes-min80.json>
 - Letterboxd
   - <https://letterboxd.com/official/list/letterboxds-top-500-films/>
+- British Film Institute (BFI)
+  - <https://www.bfi.org.uk/lists/10-great-documentaries-that-play-like-thrillers>
 
 ### MDBList
 
@@ -63,11 +65,16 @@ Use a public custom list URL in the form `https://letterboxd.com/<member>/list/<
 
 To refresh cached Letterboxd film IDs, run **Dashboard → Scheduled Tasks → Clear Magic Collections Cache**. The task has no default schedule. It leaves your collections untouched and does not start a sync; the next sync fetches the IDs again.
 
+### BFI film lists
+
+Use an editorial film list URL in the form `https://www.bfi.org.uk/lists/<slug>`, without a query string or fragment. The plugin reads titles and years from film captions that agree with their section headings. The lists index, news articles, and articles without this structure are not supported.
+
+BFI lists are the exception to provider-ID matching. The plugin adds a film only when exactly one movie in Jellyfin has the same title and release year. It ignores case, extra spaces, and straight versus curly apostrophes. A missing year, different edition title, or multiple matches means the movie is skipped. No external metadata lookup is needed.
+
 ### Not yet supported
 
 Follow these issues for the status of other sources from Jellyfin Auto Collections:
 
-- [BFI film lists](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/16)
 - [Criterion Channel](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/18)
 - [IMDb lists and charts](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/13)
 - [Jellyfin library queries](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/21)
@@ -166,7 +173,7 @@ After editing the plugin, rerun `docker compose up --build -d` to install the re
 
 Implement `ISourceListHandler` to recognize a site's URLs and return a `SourceList` with an optional name, optional plain-text description, and entries containing a media type and provider IDs. Register the implementation for `ISourceListHandler` in `ServiceRegistrator`. The handler only reads the source list.
 
-`CollectionSync` matches movies and series by media type and at least one shared provider name and ID. It still finds existing collections by their `AutoCollections:<absolute source URL>` tags. It adds only missing members.
+`CollectionSync` matches movies and series by media type and at least one shared provider name and ID. BFI lists explicitly use the separate movie title-and-year match described above. Sync finds existing collections by their `AutoCollections:<absolute source URL>` tags and adds only missing members.
 
 A new collection uses the list name, or the final URL segment with spaces in place of hyphens and underscores. `JellyfinCollectionLibrary` handles Jellyfin queries and writes.
 
