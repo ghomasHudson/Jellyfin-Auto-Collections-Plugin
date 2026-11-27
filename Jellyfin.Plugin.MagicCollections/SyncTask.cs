@@ -19,9 +19,10 @@ public sealed class SyncTask(CollectionSync sync, ILogger<SyncTask> logger) : IS
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         var plugin = MagicCollectionsPlugin.Instance ?? throw new InvalidOperationException("Magic Collections is not loaded.");
-        await sync.RunAsync(plugin.Configuration.SourceUrls,
+        var config = plugin.Configuration;
+        await sync.RunAsync(config.SourceUrls,
             url => logger.LogWarning("Unsupported source list URL: {SourceUrl}", url),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken, config.VerboseLogging ? logger : null).ConfigureAwait(false);
         progress.Report(100);
     }
 }

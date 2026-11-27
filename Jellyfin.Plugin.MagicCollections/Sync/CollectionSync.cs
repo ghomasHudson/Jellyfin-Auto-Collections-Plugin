@@ -1,10 +1,13 @@
+using Microsoft.Extensions.Logging;
+
 namespace Jellyfin.Plugin.MagicCollections.Sync;
 
 public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICollectionLibrary library)
 {
     internal const string ManagedCollectionTag = "Magic Collection";
 
-    public async Task RunAsync(IEnumerable<string> urls, Action<string> reportUnsupported, CancellationToken cancellationToken)
+    public async Task RunAsync(IEnumerable<string> urls, Action<string> reportUnsupported,
+        CancellationToken cancellationToken, ILogger? verboseLogger = null)
     {
         // Snapshot once per run. Build each index only if a source uses it.
         var media = new Lazy<LibraryMedia[]>(() => library.GetMedia().ToArray());
@@ -27,12 +30,18 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             }
 
             var (source, handler) = match;
-            var canonicalUrl = handler.GetCanonicalUrl(source).AbsoluteUri;
+            var canonicalSource = handler.GetCanonicalUrl(source);
+            var canonicalUrl = canonicalSource.AbsoluteUri;
+            // Leave credentials, query strings and fragments out of the verbose logs.
+            var logUrl = verboseLogger is null ? null :
+                canonicalSource.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped);
             if (!syncedSources.Add(canonicalUrl))
             {
+                verboseLogger?.LogInformation("Skipping duplicate source list {SourceUrl}", logUrl);
                 continue;
             }
 
+            verboseLogger?.LogInformation("Reading source list {SourceUrl}", logUrl);
             var list = await handler.ReadAsync(source, cancellationToken).ConfigureAwait(false);
             var matches = list.ProviderItems.SelectMany(Keys)
                 .SelectMany(key => mediaByProvider.Value[key]).ToHashSet();
@@ -46,9 +55,14 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            var matchableEntryCount = list.ProviderItems.Count + list.MoviesByTitleYear.Count;
+            var libraryMatchCount = matches.Count;
             var existing = library.FindByTags(canonicalUrl, ManagedCollectionTag);
-            if (existing is null && matches.Count == 0)
+            if (existing is null && libraryMatchCount == 0)
             {
+                verboseLogger?.LogInformation(
+                    "No library matches for {SourceUrl} ({MatchableEntryCount} entries available for matching); collection not created",
+                    logUrl, matchableEntryCount);
                 continue;
             }
 
@@ -60,6 +74,9 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             {
                 await library.AddMembersAsync(id, matches).ConfigureAwait(false);
             }
+            verboseLogger?.LogInformation(
+                "Collection membership for {SourceUrl}: {LibraryMatchCount} library matches from {MatchableEntryCount} entries available for matching; added {AddedCount} items (collection created: {Created})",
+                logUrl, libraryMatchCount, matchableEntryCount, matches.Count, existing is null);
 
             if (!string.IsNullOrWhiteSpace(list.Description))
             {

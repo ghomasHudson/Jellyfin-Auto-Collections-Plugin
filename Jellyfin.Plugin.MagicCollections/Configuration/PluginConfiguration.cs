@@ -8,4 +8,5 @@ public sealed class PluginConfiguration : BasePluginConfiguration
     public bool PosterBackgroundImage { get; set; } = true;
     public bool PosterIcon { get; set; } = true;
     public bool PosterListName { get; set; } = true;
+    public bool VerboseLogging { get; set; }
 }

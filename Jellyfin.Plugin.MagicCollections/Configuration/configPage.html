@@ -41,6 +41,10 @@
                             <label><input is="emby-checkbox" type="checkbox" name="PosterListName" checked /><span>List name</span></label>
                         </div>
                     </details>
+                    <div class="checkboxContainer">
+                        <label><input is="emby-checkbox" type="checkbox" name="VerboseLogging" aria-describedby="magicCollectionsLoggingDescription" /><span>Enable verbose logging</span></label>
+                        <div id="magicCollectionsLoggingDescription" class="fieldDescription">Include source list and collection update details in the Jellyfin server log during sync.</div>
+                    </div>
                     <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
                 </form>
                 <template id="magicCollectionsUrlRow">
@@ -57,7 +61,7 @@
                 const form = page.querySelector('form');
                 const urls = page.querySelector('#magicCollectionsUrls');
                 const template = page.querySelector('#magicCollectionsUrlRow');
-                const posterOptions = page.querySelectorAll('#magicCollectionsPoster input[type="checkbox"]');
+                const checkboxOptions = form.querySelectorAll('input[type="checkbox"]');
 
                 // Jellyfin translates template placeholders in the whole page, including inline scripts.
                 function urlLabel(index) {
@@ -131,7 +135,7 @@
 
                 page.addEventListener('pageshow', () => withConfiguration(config => {
                     renderUrls(config.SourceUrls || []);
-                    posterOptions.forEach(option => { option.checked = config[option.name]; });
+                    checkboxOptions.forEach(option => { option.checked = config[option.name] ?? option.defaultChecked; });
                 }));
                 // Keep a blank row from collapsing on blur before the Save click completes.
                 form.querySelector('button[type="submit"]').addEventListener('mousedown', event => event.preventDefault());
@@ -139,7 +143,7 @@
                     event.preventDefault();
                     return withConfiguration(async config => {
                         config.SourceUrls = Array.from(urls.querySelectorAll('input'), input => input.value.trim()).filter(Boolean);
-                        posterOptions.forEach(option => { config[option.name] = option.checked; });
+                        checkboxOptions.forEach(option => { config[option.name] = option.checked; });
                         const result = await ApiClient.updatePluginConfiguration(pluginId, config);
                         renderUrls(config.SourceUrls);
                         Dashboard.processPluginConfigurationUpdateResult(result);
