@@ -27,9 +27,10 @@ of the installed helper. If the data mount is private to root, run Jellyfin
 as a non-root user with access to its data instead. A `noexec` data mount
 also prevents the bundled helper from starting.
 
-The bundle includes `libXext.so.6` because some images, including LinuxServer's
-Jellyfin image, omit it. The official image is the tested target; other images
-may still lack libraries that the helper expects from the runtime.
+The bundle includes `libXext.so.6`, `libXrender.so.1`, `libmount.so.1`, and
+`libxml2.so.2` to cover differences in the LinuxServer images. The smoke test
+covers pinned official and LinuxServer images (Ubuntu 24.04 and 26.04).
+Other images or versions may lack additional libraries.
 
 The archive records `0755` for these three files and `0644` for other files.
 The plugin applies read-only modes after extraction: `0555` for these three
@@ -62,7 +63,8 @@ bash docker/imdb-helper/smoke-stock.sh /tmp/imdb-helper/magic-collections-imdb-l
 ```
 
 The script checks the archive's paths and file modes before extracting it.
-Then it mounts the bundle read-only in stock Jellyfin and runs as UID 1000
+Then it mounts the bundle read-only in each image and checks the shared
+library dependencies of every executable and shared library. It runs as UID 1000
 with networking disabled. The browser test verifies JavaScript execution,
 renderer namespace and seccomp isolation, same-URL document replacement, and
 exact script extraction. It uses local fixtures rather than live IMDb pages.
