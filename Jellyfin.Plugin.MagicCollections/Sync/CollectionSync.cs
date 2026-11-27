@@ -71,7 +71,7 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             cancellationToken.ThrowIfCancellationRequested();
             var matchableEntryCount = list.ProviderItems.Count + list.MoviesByTitleYear.Count;
             var libraryMatchCount = matches.Count;
-            // Recommendation URLs refer to the connected account's own results.
+            // Watchlist and recommendation URLs refer to the connected account's own results.
             var sourceTag = list.TraktAccountScopedOwner is { } owner
                 ? PrivateTraktTag($"{canonicalUrl}|{owner.ToLowerInvariant()}")
                 : list.ReadWithTraktAccount ? opaqueTag! : canonicalUrl;

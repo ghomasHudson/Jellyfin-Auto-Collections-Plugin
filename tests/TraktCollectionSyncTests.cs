@@ -12,6 +12,8 @@ public sealed class TraktCollectionSyncTests : IDisposable
     private const string ListUrl = "https://app.trakt.tv/users/justin/lists/open-your-eyes";
     private const string ListSummary = "https://api.trakt.tv/users/justin/lists/open-your-eyes/";
     private const string ListItems = ListSummary + "items/movie,show,season,episode";
+    private const string WatchlistUrl = "https://app.trakt.tv/users/me/watchlist";
+    private const string WatchlistItems = "https://api.trakt.tv/users/me/watchlist/movie,show/rank";
     private const string RecommendedUrl = "https://app.trakt.tv/discover/recommended";
     private const string RecommendationQuery = "?limit=100&ignore_collected=true&ignore_watched=true";
     private const string SmartListUrl = "https://app.trakt.tv/lists/smart/view/hidden-gems-6ae39104c63e248a";
@@ -512,9 +514,33 @@ public sealed class TraktCollectionSyncTests : IDisposable
     });
 
     [Fact]
-    public async Task Recommendations_require_a_connection_but_do_not_block_public_sync()
+    public async Task The_connected_watchlist_imports_movies_and_shows_from_every_page()
+        => await SyncWithTraktAccount(async (sync, _, _) =>
     {
-        const string url = RecommendedUrl + "?mode=media&genres=action";
+        _responses.Page(WatchlistItems, 1, 1, 2, Movies(1, 1, wrapped: true));
+        _responses.Page(WatchlistItems, 2, 1, 2, """[{"type":"show","show":{"ids":{"tvdb":2}}}]""");
+        var movie = LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
+        var show = LibraryItem(SourceMediaType.Series, "Tvdb", "2");
+        LibraryItem(SourceMediaType.Series, "Tmdb", "1");
+
+        await sync.RunAsync([WatchlistUrl, WatchlistUrl + "/?access_token=ignored#items"], Assert.Fail, default);
+
+        var collection = Assert.Single(_library.ManagedCollections);
+        Assert.Equal("Trakt Watchlist", collection.Name);
+        Assert.Equal(2, collection.Members.Count);
+        Assert.Contains(movie, collection.Members);
+        Assert.Contains(show, collection.Members);
+        Assert.Contains(collection.Tags, tag => tag.StartsWith("trakt-private:", StringComparison.Ordinal));
+        Assert.DoesNotContain(collection.Tags, tag => tag.Contains("watchlist", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal([WatchlistItems + "?page=1&limit=50", WatchlistItems + "?page=2&limit=50"], _responses.Requests);
+        Assert.Equal(["Bearer access-0", "Bearer access-0"], _responses.Authorizations);
+    });
+
+    [Theory]
+    [InlineData(WatchlistUrl)]
+    [InlineData(RecommendedUrl + "?mode=media&genres=action")]
+    public async Task Account_specific_sources_require_a_connection_but_do_not_block_public_sync(string url)
+    {
         const string chart = "https://trakt.tv/movies/popular";
         const string chartApi = "https://api.trakt.tv/movies/popular";
         _responses.Page(chartApi, 1, 50, 1, Movies(1, 1));
@@ -526,6 +552,43 @@ public sealed class TraktCollectionSyncTests : IDisposable
         Assert.Contains("Connect Trakt", Assert.Single(warnings));
         Assert.Equal([chartApi + "?page=1&limit=50"], _responses.Requests);
         Assert.Equal([member], Assert.Single(_library.ManagedCollections).Members);
+    }
+
+    [Fact]
+    public async Task A_failed_watchlist_page_does_not_change_the_existing_collection()
+        => await SyncWithTraktAccount(async (sync, _, _) =>
+    {
+        var original = LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
+        LibraryItem(SourceMediaType.Movie, "Tmdb", "2");
+        _responses.Page(WatchlistItems, 1, 50, 1, Movies(1, 1, wrapped: true));
+        await sync.RunAsync([WatchlistUrl], Assert.Fail, default);
+        var collection = Assert.Single(_library.ManagedCollections);
+
+        _responses.Page(WatchlistItems, 1, 1, 2, Movies(2, 1, wrapped: true));
+        _responses.Record(WatchlistItems + "?page=2&limit=50", () => new(HttpStatusCode.ServiceUnavailable));
+        var warnings = new List<string>();
+        await sync.RunAsync([WatchlistUrl], Assert.Fail, default, reportPrivateFailure: warnings.Add);
+
+        Assert.Contains("HTTP 503", Assert.Single(warnings));
+        Assert.DoesNotContain("watchlist", warnings[0], StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(collection.Id, Assert.Single(_library.ManagedCollections).Id);
+        Assert.Equal([original], collection.Members);
+    });
+
+    [Fact]
+    public async Task Changing_the_connected_account_does_not_add_its_watchlist_to_the_previous_accounts_collection()
+    {
+        var first = LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
+        var second = LibraryItem(SourceMediaType.Movie, "Tmdb", "2");
+        _responses.Page(WatchlistItems, 1, 50, 1, Movies(1, 1, wrapped: true));
+        await SyncWithTraktAccount((sync, _, _) => sync.RunAsync([WatchlistUrl], Assert.Fail, default));
+        var original = Assert.Single(_library.ManagedCollections);
+
+        _responses.Page(WatchlistItems, 1, 50, 1, Movies(2, 1, wrapped: true));
+        await SyncWithTraktAccount((sync, _, _) => sync.RunAsync([WatchlistUrl], Assert.Fail, default), owner: "other-owner");
+
+        Assert.Equal([first], original.Members);
+        Assert.Equal([second], Assert.Single(_library.ManagedCollections, collection => collection.Id != original.Id).Members);
     }
 
     [Theory]

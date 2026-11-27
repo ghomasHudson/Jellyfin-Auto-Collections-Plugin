@@ -11,6 +11,7 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
 {
     private static readonly Uri ApiOrigin = new("https://api.trakt.tv");
     private static readonly Uri TraktFavicon = new("https://app.trakt.tv/pwa/android/icon_192.png");
+    private const string WatchlistPath = "/users/me/watchlist";
     private const int PageSize = 50;
     private const int ChartEntryCap = 100;
     private const int RecommendationLimit = 100;
@@ -79,6 +80,7 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
 
             var (name, description) = source switch
             {
+                { IsWatchlist: true } => ("Trakt Watchlist", null),
                 { Recommendation: { } recommendation } => (recommendation.Name, null),
                 { Chart: { } chart } => (chart.Name, null),
                 _ => await ReadSummaryAsync(source, clientId, authenticated, cancellationToken).ConfigureAwait(false)
@@ -378,9 +380,9 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
     }
 
     private sealed record Source(string ItemsPath, Uri CanonicalUrl, Chart? Chart = null, string? SummaryPath = null,
-        string? Owner = null, Recommendation? Recommendation = null)
+        string? Owner = null, bool IsWatchlist = false, Recommendation? Recommendation = null)
     {
-        public bool RequiresAccount => Recommendation is not null;
+        public bool RequiresAccount => IsWatchlist || Recommendation is not null;
         public bool IsPersonal => RequiresAccount || SummaryPath is not null;
     }
 
@@ -399,6 +401,11 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
         }
 
         var segments = url.AbsolutePath.TrimEnd('/').Split('/');
+        if (segments is ["", "users", "me", "watchlist"])
+        {
+            return new(WatchlistPath + "/movie,show/rank", new("https://app.trakt.tv" + WatchlistPath), IsWatchlist: true);
+        }
+
         if (segments is ["", "users", var user, "lists", var list] &&
             Uri.UnescapeDataString(user) is var userSlug && IsSlug(userSlug) &&
             !userSlug.Equals("me", StringComparison.OrdinalIgnoreCase) &&

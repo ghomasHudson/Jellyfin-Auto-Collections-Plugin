@@ -30,6 +30,12 @@ If you make a Trakt list private, the first successful private sync removes the 
 
 The callback uses HTTPS even if your dashboard doesn’t. Only use an HTTP Jellyfin dashboard on a trusted network. Jellyfin stores the tokens on its own data volume, so protect access to that volume and its backups.
 
+## Import your Trakt watchlist
+
+Connect Trakt, then add `https://app.trakt.tv/users/me/watchlist` under **Source list URLs**. Select **Save** and run **Sync Magic Collections**. The plugin adds matching movies and whole series to a shared **Trakt Watchlist** collection. It does not remove titles that leave your watchlist.
+
+The link always uses the connected Trakt account. If you switch accounts, the plugin keeps the previous collection separate. Disconnecting stops future watchlist reads.
+
 ## Import Trakt recommendations
 
 Connect Trakt and paste a **Discover → Recommended** link under **Source list URLs**. Choose a link for movies, shows, or both. Magic Collections preserves `ratings`, `runtimes`, and `genres` filters, as in [this filtered movie and show link](https://app.trakt.tv/discover/recommended?mode=media&ratings=78-100&runtimes=80-500&genres=action). Links with other filters aren't supported.

@@ -32,6 +32,7 @@ public sealed class PluginConfigurationTests : IDisposable
                 "{{unrelated}}",
                 "http://trakt.tv/users/JUSTIN/lists/OPEN-YOUR-EYES/?access_token=query-token#fragment-token",
                 "https://trakt.tv/shows/popular#fragment-token",
+                "https://trakt.tv/users/me/watchlist/?access_token=query-token#fragment-token",
                 "{{filteredChart}}",
                 "http://app.trakt.tv/discover/recommended/?genres=action&runtimes=80-500&mode=media&ratings=78-100&access_token=query-token#fragment-token",
                 "{{smartList}}/?access_token=query-token#fragment-token"
@@ -46,7 +47,7 @@ public sealed class PluginConfigurationTests : IDisposable
         configuredPlugin.UpdateConfiguration(config);
 
         var expectedUrls = new[] { unrelated, publicList, "https://app.trakt.tv/discover/popular?mode=show",
-            filteredChart, recommended, smartList };
+            "https://app.trakt.tv/users/me/watchlist", filteredChart, recommended, smartList };
         Assert.Equal(expectedUrls, plugin.Configuration.SourceUrls);
         var xml = File.ReadAllText(plugin.ConfigurationFilePath);
         Assert.DoesNotContain("query-token", xml, StringComparison.Ordinal);
