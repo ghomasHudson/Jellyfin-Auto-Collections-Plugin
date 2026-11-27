@@ -29,4 +29,15 @@ public sealed class ServiceRegistratorTests
 
         Assert.IsType<BfiHandler>(handler);
     }
+
+    [Fact]
+    public void Registers_one_handler_for_Trakt_public_lists_and_charts()
+    {
+        var list = new Uri("https://app.trakt.tv/users/justin/lists/open-your-eyes");
+        var chart = new Uri("https://trakt.tv/shows/popular");
+        using var provider = PluginTestServices.BuildProvider();
+
+        var handler = Assert.Single(provider.GetServices<ISourceListHandler>(), h => h.Supports(list));
+        Assert.Same(handler, Assert.Single(provider.GetServices<ISourceListHandler>(), h => h.Supports(chart)));
+    }
 }
