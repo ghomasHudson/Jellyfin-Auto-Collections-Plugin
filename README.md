@@ -33,6 +33,7 @@ Jellyfin plugin to make and update collections based on internet lists such as I
 - [Steven Lu Popular movies](https://github.com/sjlu/popular-movies)
 - [BFI](https://www.bfi.org.uk/articles/type/lists)
 
+
 ### Not yet supported
 
 Follow these issues for the status of other sources from Jellyfin Auto Collections:
@@ -131,11 +132,13 @@ After editing the plugin, rerun `docker compose up --build -d` to install the re
 - Run `docker compose down` to stop Jellyfin and keep your settings.
 - Run `docker compose down -v` to stop Jellyfin and delete the sandbox's configuration and cache.
 
-## Add a new Site
+## Add a new site
 
-Implement `ISourceListHandler` to recognize a site's URLs and return a `SourceList` with an optional name, optional plain-text description, and entries containing a media type and provider IDs. Register the implementation for `ISourceListHandler` in `ServiceRegistrator`. The handler only reads the source list.
+Implement `ISourceListHandler` to recognize a site's URLs and read its source lists. Register the handler in `ServiceRegistrator`. Handlers do not query the Jellyfin library or write collections.
 
-`CollectionSync` matches movies and series by media type and at least one shared provider name and ID. It still finds existing collections by their `AutoCollections:<absolute source URL>` tags. It adds only missing members.
+Return a `SourceList` with the list name and plain-text description when available. Put entries with a media type and provider IDs in `ProviderItems`. British Film Institute (BFI) lists are the only exception: put movie titles and release years in `MoviesByTitleYear` and leave `ProviderItems` empty.
+
+`CollectionSync` matches movies and series by media type and at least one shared provider name and ID. BFI lists explicitly use the separate movie title-and-year match described above. Sync finds existing collections by their `AutoCollections:<absolute source URL>` tags and adds only missing members.
 
 A new collection uses the list name, or the final URL segment with spaces in place of hyphens and underscores. `JellyfinCollectionLibrary` handles Jellyfin queries and writes.
 

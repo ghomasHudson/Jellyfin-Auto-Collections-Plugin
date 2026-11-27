@@ -4,7 +4,11 @@ public enum SourceMediaType { Movie, Series }
 
 public sealed record MediaIdentity(SourceMediaType Type, IReadOnlyDictionary<string, string> ProviderIds);
 
-public sealed record SourceList(string? Name, IReadOnlyList<MediaIdentity> Items, string? Description = null);
+public sealed record SourceList(string? Name, IReadOnlyList<MediaIdentity> ProviderItems, string? Description = null)
+{
+    // Reserved for BFI editorial lists, which don't publish provider IDs.
+    public IReadOnlyList<MovieTitleYear> MoviesByTitleYear { get; init; } = [];
+}
 
 public interface ISourceListHandler
 {

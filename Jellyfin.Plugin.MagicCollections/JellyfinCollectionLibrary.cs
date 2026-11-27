@@ -21,8 +21,15 @@ internal sealed class JellyfinCollectionLibrary(
             IsVirtualItem = false,
             GroupByPresentationUniqueKey = false
         }, allowExternalContent: false);
-        return items.Select(item => new LibraryMedia(
-            item.Id, new(item is Movie ? SourceMediaType.Movie : SourceMediaType.Series, item.ProviderIds)));
+        return items.Select(item =>
+        {
+            var type = item is Movie ? SourceMediaType.Movie : SourceMediaType.Series;
+            MovieTitleYear? titleYear = type == SourceMediaType.Movie &&
+                item.ProductionYear is int year && year > 0 && !string.IsNullOrWhiteSpace(item.Name)
+                ? new(item.Name, year)
+                : null;
+            return new LibraryMedia(item.Id, new(type, item.ProviderIds), titleYear);
+        });
     }
 
     public TaggedCollection? FindByTag(string tag)
