@@ -25,17 +25,18 @@ dpkg-query -W -f='${Package} ${Version}\n' | sort > /tmp/base-packages
 apt-get -o Acquire::Retries=3 update
 apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
     libatomic1 libglib2.0-0t64 libnss3 libnspr4 libatk-bridge2.0-0t64 \
-    libdbus-1-3 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxrandr2 \
-    libgbm1 libxkbcommon0 libasound2t64
+    libdbus-1-3 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxrandr2 libxrender1 \
+    libgbm1 libxkbcommon0 libasound2t64 libmount1 libxml2
 dpkg-query -W -f='${Package} ${Version}\n' | sort > /tmp/with-packages
 
 # Reuse most libraries already available in the pinned runtime; never ship glibc or ld-linux.
-# Include libXext explicitly: Chromium needs it, but LinuxServer's Jellyfin image can lack it.
+# LinuxServer images can lack these versions needed by Chromium, GLib and Mesa.
+# Include them even when provided by the build base.
 # This is intentionally based on versions as well as package names.
 mkdir -p /bundle/native /bundle/licenses/debian
 {
     comm -13 /tmp/base-packages /tmp/with-packages
-    dpkg-query -W -f='${Package} ${Version}\n' libxext6
+    dpkg-query -W -f='${Package} ${Version}\n' libmount1 libxext6 libxrender1 libxml2
 } | sort -u > /tmp/bundled-packages
 cat > /bundle/licenses/debian/sources.txt <<EOF
 Unmodified Debian 13 packages; see their copyright files and corresponding source packages:
