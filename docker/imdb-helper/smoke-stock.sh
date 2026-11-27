@@ -32,6 +32,8 @@ with ZipFile(sys.argv[2]) as archive:
         paths.add(name)
     if not EXECUTABLES <= paths or "render.py" not in paths:
         raise ValueError("Missing helper ZIP entrypoints")
+    if "native/libXext.so.6" not in paths:
+        raise ValueError("Missing bundled libXext.so.6 required by Chromium")
     archive.extractall(sys.argv[3])
     for name in EXECUTABLES:
         (Path(sys.argv[3]) / name).chmod(0o755)
