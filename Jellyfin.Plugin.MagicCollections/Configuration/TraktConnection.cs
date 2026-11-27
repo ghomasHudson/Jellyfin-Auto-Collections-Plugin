@@ -132,24 +132,18 @@ public sealed class TraktConnection(HttpClient http, Func<PluginConfiguration> c
             return new TraktConnectionStatus(false, Notice: "Disconnected in Jellyfin. Remove the app in Trakt to revoke access there.");
         }, cancellationToken);
 
+    internal Task<string> GetConnectedOwnerAsync(CancellationToken cancellationToken) =>
+        LockedAsync(async () => (await RequireConnectionAsync(cancellationToken).ConfigureAwait(false)).Slug, cancellationToken);
+
     internal Task<HttpResponseMessage> SendListRequestAsync(HttpRequestMessage request, string owner,
         CancellationToken cancellationToken) =>
         LockedAsync(async () =>
         {
-            var stored = await ReadAsync(cancellationToken).ConfigureAwait(false);
-            if (stored is null || stored.ClientId != ClientId())
-            {
-                throw new TraktConnectionException("Connect Trakt in the Magic Collections settings.");
-            }
+            var stored = await RequireConnectionAsync(cancellationToken).ConfigureAwait(false);
 
             if (!owner.Equals(stored.Slug, StringComparison.OrdinalIgnoreCase))
             {
                 throw new TraktConnectionException("The source list must belong to the connected Trakt account.");
-            }
-
-            if (stored.NeedsReconnect)
-            {
-                throw new TraktConnectionException(ReconnectNotice);
             }
 
             if (request.Method != HttpMethod.Get ||
@@ -200,6 +194,22 @@ public sealed class TraktConnection(HttpClient http, Func<PluginConfiguration> c
             await SaveAsync(stored with { NeedsReconnect = true }).ConfigureAwait(false);
             throw new TraktConnectionException(ReconnectNotice);
         }, cancellationToken);
+
+    private async Task<StoredConnection> RequireConnectionAsync(CancellationToken cancellationToken)
+    {
+        var stored = await ReadAsync(cancellationToken).ConfigureAwait(false);
+        if (stored is null || stored.ClientId != ClientId())
+        {
+            throw new TraktConnectionException("Connect Trakt in the Magic Collections settings.");
+        }
+
+        if (stored.NeedsReconnect)
+        {
+            throw new TraktConnectionException(ReconnectNotice);
+        }
+
+        return stored;
+    }
 
     private async Task<T> LockedAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)
     {

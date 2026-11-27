@@ -71,9 +71,12 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             cancellationToken.ThrowIfCancellationRequested();
             var matchableEntryCount = list.ProviderItems.Count + list.MoviesByTitleYear.Count;
             var libraryMatchCount = matches.Count;
-            var sourceTag = list.ReadWithTraktAccount ? opaqueTag! : canonicalUrl;
+            // Recommendation URLs refer to the connected account's own results.
+            var sourceTag = list.TraktAccountScopedOwner is { } owner
+                ? PrivateTraktTag($"{canonicalUrl}|{owner.ToLowerInvariant()}")
+                : list.ReadWithTraktAccount ? opaqueTag! : canonicalUrl;
             var existing = library.FindByTags(sourceTag, ManagedCollectionTag);
-            if (existing is null && opaqueTag is not null)
+            if (existing is null && opaqueTag is not null && list.TraktAccountScopedOwner is null)
             {
                 // Changing the source's access mode must not create a second collection.
                 // Only migrate after successfully reading the entire list.

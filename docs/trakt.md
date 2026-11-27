@@ -24,10 +24,18 @@ Magic Collections uses Trakt but is not endorsed or certified by Trakt.
 
 Public lists still work without sign-in. If Trakt denies access to a personal list, Jellyfin checks who owns it. Jellyfin only retries with the connected account if it owns the list.
 
-Magic Collections doesn't import Trakt watchlists or smart lists.
-
 **The resulting Jellyfin collections are shared.** People with access to your collections may see the imported list names, descriptions, and matching titles. Disconnecting stops future reads but leaves existing collections in place.
 
 If you make a Trakt list private, the first successful private sync removes the public URL tag from the existing collection. This doesn't erase the URL from old logs or backups.
 
 The callback uses HTTPS even if your dashboard doesn’t. Only use an HTTP Jellyfin dashboard on a trusted network. Jellyfin stores the tokens on its own data volume, so protect access to that volume and its backups.
+
+## Import Trakt recommendations
+
+Connect Trakt and paste a **Discover → Recommended** link under **Source list URLs**. Choose a link for movies, shows, or both. Magic Collections preserves `ratings`, `runtimes`, and `genres` filters, as in [this filtered movie and show link](https://app.trakt.tv/discover/recommended?mode=media&ratings=78-100&runtimes=80-500&genres=action). Links with other filters aren't supported.
+
+The plugin reads up to 100 personalized recommendations for the connected account and adds matching titles to a shared collection. Different filters and different Trakt accounts use separate collections. Sync doesn't remove titles that are no longer recommended.
+
+## Import a public Trakt smart list
+
+Paste a public smart list link such as [Hidden Gems](https://app.trakt.tv/lists/smart/view/hidden-gems-6ae39104c63e248a) under **Source list URLs**. The plugin uses the list's name and checks every page for matching movies and shows. You don't need to connect Trakt. Private smart lists aren't supported.

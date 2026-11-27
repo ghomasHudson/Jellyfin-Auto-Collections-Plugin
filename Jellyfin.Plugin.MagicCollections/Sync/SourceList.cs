@@ -11,6 +11,7 @@ public sealed record SourceList(string? Name, IReadOnlyList<MediaIdentity> Provi
     public IReadOnlyList<Uri> FaviconUrls { get; init; } = [];
     public Uri? ImageUrl { get; init; }
     internal bool ReadWithTraktAccount { get; init; }
+    internal string? TraktAccountScopedOwner { get; init; }
 }
 
 public interface ISourceListHandler

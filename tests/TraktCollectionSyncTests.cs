@@ -12,6 +12,11 @@ public sealed class TraktCollectionSyncTests : IDisposable
     private const string ListUrl = "https://app.trakt.tv/users/justin/lists/open-your-eyes";
     private const string ListSummary = "https://api.trakt.tv/users/justin/lists/open-your-eyes/";
     private const string ListItems = ListSummary + "items/movie,show,season,episode";
+    private const string RecommendedUrl = "https://app.trakt.tv/discover/recommended";
+    private const string RecommendationQuery = "?limit=100&ignore_collected=true&ignore_watched=true";
+    private const string SmartListUrl = "https://app.trakt.tv/lists/smart/view/hidden-gems-6ae39104c63e248a";
+    private const string SmartListSummary = "https://api.trakt.tv/smart-lists/hidden-gems-6ae39104c63e248a";
+    private const string SmartListItems = SmartListSummary + "/items";
     private readonly ControlledLibrary _library = new();
     private readonly TraktResponses _responses = new();
     private readonly PluginConfiguration _configuration = new();
@@ -276,6 +281,15 @@ public sealed class TraktCollectionSyncTests : IDisposable
     [InlineData("https://app.trakt.tv/discover/popular")]
     [InlineData("https://app.trakt.tv/discover/trending?mode=show&genres=comedy")]
     [InlineData("https://app.trakt.tv/discover/popular?mode=show&mode=movie")]
+    [InlineData(RecommendedUrl + "?mode=episode")]
+    [InlineData(RecommendedUrl + "?mode=movie&mode=show")]
+    [InlineData(RecommendedUrl + "?mode=movie&ratings=100-78")]
+    [InlineData(RecommendedUrl + "?mode=movie&ratings=78-101")]
+    [InlineData(RecommendedUrl + "?mode=movie&runtimes=500")]
+    [InlineData(RecommendedUrl + "?mode=movie&genres=action&genres=comedy")]
+    [InlineData(RecommendedUrl + "?mode=movie&genres=action%26limit%3D1")]
+    [InlineData(RecommendedUrl + "?mode=movie&limit=1")]
+    [InlineData("https://app.trakt.tv/lists/smart/view/a%2Fb")]
     public async Task Does_not_send_requests_for_other_Trakt_URLs_or_filtered_charts(string url)
     {
         var unsupported = new List<string>();
@@ -369,6 +383,150 @@ public sealed class TraktCollectionSyncTests : IDisposable
     }
 
     public void Dispose() => _http.Dispose();
+
+    [Fact]
+    public async Task A_public_smart_list_imports_its_name_and_matches_beyond_the_chart_cap_without_sign_in()
+    {
+        _responses.Record(SmartListSummary, () => new(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"name":"Hidden Gems","privacy":"public","source":"discover","filters":{"ratings":[78,100]}}""")
+        });
+        _responses.Page(SmartListItems, 1, 50, 101, Movies(1, 50, wrapped: true));
+        _responses.Page(SmartListItems, 2, 50, 101, Movies(51, 50, wrapped: true));
+        _responses.Page(SmartListItems, 3, 50, 101, """[{"type":"show","show":{"ids":{"tvdb":101}},"rank":101}]""");
+        var movie = LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
+        var show = LibraryItem(SourceMediaType.Series, "Tvdb", "101");
+
+        await SyncAsync(SmartListUrl + "/?access_token=ignored#items", SmartListUrl);
+
+        var collection = Assert.Single(_library.ManagedCollections);
+        Assert.Equal("Hidden Gems", collection.Name);
+        Assert.Equal(["Magic Collection", SmartListUrl, "Trakt"], collection.Tags);
+        Assert.Equal(2, collection.Members.Count);
+        Assert.Contains(movie, collection.Members);
+        Assert.Contains(show, collection.Members);
+        Assert.Equal([SmartListSummary, SmartListItems + "?page=1&limit=50",
+            SmartListItems + "?page=2&limit=50", SmartListItems + "?page=3&limit=50"], _responses.Requests);
+        Assert.All(_responses.Authorizations, Assert.Null);
+    }
+
+    [Fact]
+    public async Task A_nonpublic_smart_list_does_not_send_the_connected_accounts_token()
+        => await SyncWithTraktAccount(async (sync, _, _) =>
+    {
+        _responses.Record(SmartListSummary, () => new(HttpStatusCode.NotFound));
+        var error = await Assert.ThrowsAsync<SourceListReadException>(() => sync.RunAsync([SmartListUrl], Assert.Fail, default));
+
+        Assert.Equal([SmartListSummary], _responses.Requests);
+        Assert.Null(Assert.Single(_responses.Authorizations));
+        Assert.DoesNotContain("hidden-gems", error.Message, StringComparison.Ordinal);
+        Assert.Empty(_library.ManagedCollections);
+    });
+
+    [Theory]
+    [InlineData("movie", "movies", "", "Trakt Recommended Movies")]
+    [InlineData("show", "shows", "", "Trakt Recommended Shows")]
+    [InlineData("media", "media", "&genres=action", "Trakt Recommended Movies and Shows")]
+    public async Task Reads_filtered_Trakt_recommendations_for_the_connected_account(string mode, string apiType, string genres, string name)
+        => await SyncWithTraktAccount(async (sync, _, _) =>
+    {
+        const string filters = "&ratings=78-100&runtimes=80-500";
+        var url = $"{RecommendedUrl}?mode={mode}{filters}{genres}";
+        var endpoint = $"https://api.trakt.tv/{apiType}/recommendations{RecommendationQuery}{filters}{genres}";
+        const string movieRow = """{"movie":{"ids":{"tmdb":1}}}""";
+        const string showRow = """{"show":{"ids":{"tmdb":1}}}""";
+        var rows = mode == "movie" ? movieRow : mode == "show" ? showRow : $"{movieRow},{showRow}";
+        _responses.Record(endpoint, () => new(HttpStatusCode.OK) { Content = new StringContent($"[{rows}]") });
+        var movie = LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
+        var show = LibraryItem(SourceMediaType.Series, "Tmdb", "1");
+        LibraryItem(SourceMediaType.Movie, "Tmdb", "2");
+
+        await sync.RunAsync([$"{RecommendedUrl}/?runtimes=80-500{genres}&ratings=78-100&mode={mode}&access_token=ignored#results", url],
+            Assert.Fail, default);
+
+        var collection = Assert.Single(_library.ManagedCollections);
+        Assert.Equal(name, collection.Name);
+        Guid[] expected = mode == "movie" ? [movie] : mode == "show" ? [show] : [movie, show];
+        Assert.Equal(expected.Order(), collection.Members.Order());
+        Assert.Contains(collection.Tags, tag => tag.StartsWith("trakt-private:", StringComparison.Ordinal));
+        Assert.DoesNotContain(collection.Tags, tag => tag.Contains(RecommendedUrl, StringComparison.Ordinal));
+        Assert.Equal([endpoint], _responses.Requests);
+        Assert.Equal(["Bearer access-0"], _responses.Authorizations);
+    });
+
+    [Fact]
+    public async Task Different_filters_or_connected_accounts_keep_separate_recommendation_collections()
+    {
+        const string endpoint = "https://api.trakt.tv/movies/recommendations" + RecommendationQuery;
+        const string url = RecommendedUrl + "?mode=movie";
+        var first = LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
+        var second = LibraryItem(SourceMediaType.Movie, "Tmdb", "2");
+        _responses.Record(endpoint, () => new(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""[{"movie":{"ids":{"tmdb":1}}}]""")
+        });
+        _responses.Record(endpoint + "&genres=action", () => new(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""[{"movie":{"ids":{"tmdb":2}}}]""")
+        });
+        await SyncWithTraktAccount((sync, _, _) => sync.RunAsync([url, url + "&genres=action"], Assert.Fail, default));
+        Assert.Equal(2, _library.ManagedCollections.Count);
+        var original = Assert.Single(_library.ManagedCollections, collection => collection.Members.Contains(first));
+
+        _responses.Record(endpoint, () => new(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""[{"movie":{"ids":{"tmdb":2}}}]""")
+        });
+        await SyncWithTraktAccount((sync, _, _) => sync.RunAsync([url], Assert.Fail, default), owner: "other-owner");
+
+        Assert.Equal(3, _library.ManagedCollections.Count);
+        Assert.Equal([first], original.Members);
+    }
+
+    [Fact]
+    public async Task A_malformed_recommendation_response_leaves_the_existing_collection_unchanged()
+        => await SyncWithTraktAccount(async (sync, _, _) =>
+    {
+        const string url = RecommendedUrl + "?mode=movie";
+        const string endpoint = "https://api.trakt.tv/movies/recommendations" + RecommendationQuery;
+        var original = LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
+        LibraryItem(SourceMediaType.Movie, "Tmdb", "2");
+        _responses.Record(endpoint, () => new(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""[{"movie":{"ids":{"tmdb":1}}}]""")
+        });
+        await sync.RunAsync([url], Assert.Fail, default);
+        var collection = Assert.Single(_library.ManagedCollections);
+
+        _responses.Record(endpoint, () => new(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""[{"movie":{"ids":{"tmdb":2}}},{"show":{"ids":{"tmdb":3}}}]""")
+        });
+        var warnings = new List<string>();
+        await sync.RunAsync([url], Assert.Fail, default, reportPrivateFailure: warnings.Add);
+
+        Assert.Contains("Invalid Trakt source list data", Assert.Single(warnings), StringComparison.Ordinal);
+        Assert.DoesNotContain(url, warnings[0], StringComparison.Ordinal);
+        Assert.Equal(collection.Id, Assert.Single(_library.ManagedCollections).Id);
+        Assert.Equal([original], collection.Members);
+    });
+
+    [Fact]
+    public async Task Recommendations_require_a_connection_but_do_not_block_public_sync()
+    {
+        const string url = RecommendedUrl + "?mode=media&genres=action";
+        const string chart = "https://trakt.tv/movies/popular";
+        const string chartApi = "https://api.trakt.tv/movies/popular";
+        _responses.Page(chartApi, 1, 50, 1, Movies(1, 1));
+        var member = LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
+        var warnings = new List<string>();
+
+        await _sync.RunAsync([url, chart], Assert.Fail, default, reportPrivateFailure: warnings.Add);
+
+        Assert.Contains("Connect Trakt", Assert.Single(warnings));
+        Assert.Equal([chartApi + "?page=1&limit=50"], _responses.Requests);
+        Assert.Equal([member], Assert.Single(_library.ManagedCollections).Members);
+    }
 
     [Theory]
     [InlineData(HttpStatusCode.Unauthorized)]
@@ -513,11 +671,11 @@ public sealed class TraktCollectionSyncTests : IDisposable
         Assert.Contains("must belong to the connected Trakt account", Assert.Single(warnings));
     });
 
-    private async Task SyncWithTraktAccount(Func<CollectionSync, TestClock, TraktTestAccount, Task> run)
+    private async Task SyncWithTraktAccount(Func<CollectionSync, TestClock, TraktTestAccount, Task> run, string owner = "justin")
     {
         var data = Path.Combine(Path.GetTempPath(), $"magic-trakt-{Guid.NewGuid():N}");
         var configuration = new PluginConfiguration();
-        using var account = new TraktTestAccount(_responses);
+        using var account = new TraktTestAccount(_responses, owner);
         using var http = new HttpClient(account, disposeHandler: false);
         var clock = new TestClock();
         var connection = new TraktConnection(http, () => configuration, data, clock);
@@ -598,7 +756,9 @@ public sealed class TraktCollectionSyncTests : IDisposable
             Assert.Equal(["2"], request.Headers.GetValues("trakt-api-version"));
             if (request.Headers.Authorization is not null)
             {
-                Assert.True(ExpectAuthenticatedLists && request.RequestUri.AbsolutePath.StartsWith("/users/", StringComparison.Ordinal));
+                Assert.True(ExpectAuthenticatedLists &&
+                    (request.RequestUri.AbsolutePath.StartsWith("/users/", StringComparison.Ordinal) ||
+                        request.RequestUri.AbsolutePath is "/movies/recommendations" or "/shows/recommendations" or "/media/recommendations"));
             }
             Authorizations.Add(request.Headers.Authorization?.ToString());
             ClientIds.Add(Assert.Single(request.Headers.GetValues("trakt-api-key")));
@@ -618,11 +778,15 @@ public sealed class TraktCollectionSyncTests : IDisposable
     private sealed class TraktTestAccount : HttpMessageHandler
     {
         private readonly HttpMessageInvoker _lists;
+        private readonly string _owner;
         public List<string> RefreshRequests { get; } = [];
         public bool RejectRefresh { get; set; }
 
-        public TraktTestAccount(HttpMessageHandler lists) =>
+        public TraktTestAccount(HttpMessageHandler lists, string owner)
+        {
             _lists = new(lists, disposeHandler: false);
+            _owner = owner;
+        }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
@@ -648,7 +812,7 @@ public sealed class TraktCollectionSyncTests : IDisposable
                 }));
             }
             return request.RequestUri.AbsoluteUri == "https://api.trakt.tv/users/settings"
-                ? Reply("""{"user":{"username":"Justin","ids":{"slug":"justin"}}}""")
+                ? Reply(JsonSerializer.Serialize(new { user = new { username = _owner, ids = new { slug = _owner } } }))
                 : await _lists.SendAsync(request, token);
         }
 

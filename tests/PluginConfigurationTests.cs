@@ -24,13 +24,17 @@ public sealed class PluginConfigurationTests : IDisposable
         const string publicList = "https://app.trakt.tv/users/justin/lists/open-your-eyes";
         const string unrelated = "https://letterboxd.com/example/list/movies/?sort=rank#list";
         const string filteredChart = "https://app.trakt.tv/discover/trending?mode=show&genres=comedy";
+        const string recommended = "https://app.trakt.tv/discover/recommended?mode=media&ratings=78-100&runtimes=80-500&genres=action";
+        const string smartList = "https://app.trakt.tv/lists/smart/view/hidden-gems-6ae39104c63e248a";
         using var update = JsonDocument.Parse($$"""
             {
               "SourceUrls": [
                 "{{unrelated}}",
                 "http://trakt.tv/users/JUSTIN/lists/OPEN-YOUR-EYES/?access_token=query-token#fragment-token",
                 "https://trakt.tv/shows/popular#fragment-token",
-                "{{filteredChart}}"
+                "{{filteredChart}}",
+                "http://app.trakt.tv/discover/recommended/?genres=action&runtimes=80-500&mode=media&ratings=78-100&access_token=query-token#fragment-token",
+                "{{smartList}}/?access_token=query-token#fragment-token"
               ],
               "TraktClientId": "{{clientId}}",
               "PosterIcon": false
@@ -41,7 +45,8 @@ public sealed class PluginConfigurationTests : IDisposable
         var config = Assert.IsType<PluginConfiguration>(update.Deserialize(configuredPlugin.ConfigurationType, JsonDefaults.Options));
         configuredPlugin.UpdateConfiguration(config);
 
-        var expectedUrls = new[] { unrelated, publicList, "https://app.trakt.tv/discover/popular?mode=show", filteredChart };
+        var expectedUrls = new[] { unrelated, publicList, "https://app.trakt.tv/discover/popular?mode=show",
+            filteredChart, recommended, smartList };
         Assert.Equal(expectedUrls, plugin.Configuration.SourceUrls);
         var xml = File.ReadAllText(plugin.ConfigurationFilePath);
         Assert.DoesNotContain("query-token", xml, StringComparison.Ordinal);
