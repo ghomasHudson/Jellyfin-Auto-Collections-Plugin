@@ -84,7 +84,9 @@ async function testPage() {
     try {
         const form = document.querySelector('form');
         const save = form.querySelector('button[type="submit"]');
+        const posterToggle = form.querySelector('summary');
         const posterOptions = [...form.querySelectorAll('input[type="checkbox"]')];
+        const visiblePosterOptions = () => posterOptions.filter(option => option.checkVisibility()).length;
         const field = (index = 1) => form.querySelector('input[aria-label="Source list URL ' + index + '"]');
         const invalid = (index = 1) => field(index)?.getAttribute('aria-invalid') === 'true';
         const borderColor = (index = 1) => getComputedStyle(field(index)).borderTopColor;
@@ -92,6 +94,9 @@ async function testPage() {
         await until(() => field(), 'The configuration did not load.');
         if (posterOptions.length !== 3 || posterOptions.some(option => !option.checked)) {
             throw new Error('All three poster options should start checked.');
+        }
+        if (posterToggle?.textContent.trim() !== 'Poster' || visiblePosterOptions() !== 0) {
+            throw new Error('The Poster section should start collapsed.');
         }
         await wait(500);
         if (field().value !== unsupported || checked.length || invalid() || borderColor() === red) {
@@ -132,7 +137,11 @@ async function testPage() {
         await until(() => invalid() && borderColor() === red, 'No red border after editing the URL.');
         field().blur();
         if (borderColor() !== red) throw new Error('The invalid border color should remain when the input loses focus.');
+        posterToggle.click();
+        if (visiblePosterOptions() !== 3) throw new Error('Expanding Poster should show all three options.');
         form.elements.PosterIcon.click();
+        posterToggle.click();
+        if (visiblePosterOptions() !== 0) throw new Error('Collapsing Poster should hide the options again.');
         save.click();
         await until(() => saveCount === 1 && saved.SourceUrls.length === 1 && saved.SourceUrls[0] === unsupported, 'Save did not keep the unsupported URL.');
         if (saved.PosterIcon !== false || saved.PosterBackgroundImage !== true || saved.PosterListName !== true) {
@@ -179,6 +188,7 @@ async function testPage() {
         if (invalid(2) || borderColor(2) === red) throw new Error('Clearing the URL should reset its border.');
         field(2).dispatchEvent(new Event('blur'));
         if (field(2)?.value !== '' || field(3)) throw new Error('Clearing an input and leaving it should remove the row.');
+        posterToggle.click();
         form.elements.PosterIcon.click();
         document.querySelector('#magicCollectionsPage').dispatchEvent(new Event('pageshow'));
         await until(() => !form.elements.PosterIcon.checked, 'Reloading settings did not restore the unchecked icon option.');
