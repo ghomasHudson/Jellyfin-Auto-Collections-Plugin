@@ -10,21 +10,8 @@
             #magicCollectionsUrls .inputLabel {
                 display: none;
             }
-            #magicCollectionsUrls .sourceUrlStatus {
-                display: grid;
-                margin-top: .25em;
-                font-size: .9em;
-            }
-            /* Reserve space for either message, including when it wraps. */
-            #magicCollectionsUrls .sourceUrlStatus > * {
-                grid-area: 1 / 1;
-            }
-            #magicCollectionsUrls .sourceUrlStatus > [aria-hidden="true"] {
-                visibility: hidden;
-            }
-            /* The trailing input is blank and has no status to show. */
-            #magicCollectionsUrls > :last-child .sourceUrlStatus {
-                display: none;
+            #magicCollectionsUrls input[aria-invalid="true"] {
+                border-color: #e53935;
             }
         </style>
         <div data-role="content">
@@ -39,11 +26,6 @@
                 <template id="magicCollectionsUrlRow">
                     <div class="inputContainer">
                         <input is="emby-input" type="text" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://mdblist.com/lists/snoak/latest-movies-digital-release" />
-                        <div class="fieldDescription sourceUrlStatus">
-                            <span data-unsupported aria-hidden="true">This doesn’t look like a supported source list URL. You can still save it.</span>
-                            <span data-check-failed aria-hidden="true">Could not check whether this URL is supported.</span>
-                            <div role="status"></div>
-                        </div>
                     </div>
                 </template>
             </div>
@@ -55,7 +37,6 @@
                 const form = page.querySelector('form');
                 const urls = page.querySelector('#magicCollectionsUrls');
                 const template = page.querySelector('#magicCollectionsUrlRow');
-                let nextStatusId = 0;
 
                 // Jellyfin translates template placeholders in the whole page, including inline scripts.
                 function urlLabel(index) {
@@ -65,18 +46,12 @@
                 function addUrl(value = '') {
                     const row = template.content.firstElementChild.cloneNode(true);
                     const input = row.querySelector('input');
-                    const status = row.querySelector('[role="status"]');
-                    const unsupportedMessage = row.querySelector('[data-unsupported]').textContent;
-                    const failedMessage = row.querySelector('[data-check-failed]').textContent;
-                    status.id = 'magicCollectionsUrlStatus' + (++nextStatusId);
                     input.setAttribute('aria-label', urlLabel(urls.children.length));
-                    input.setAttribute('aria-describedby', status.id);
                     input.value = value;
 
                     let timer;
                     let inputRevision = 0;
                     async function checkUrl(url, requestRevision) {
-                        let message;
                         try {
                             const supported = await ApiClient.ajax({
                                 type: 'POST',
@@ -85,19 +60,18 @@
                                 contentType: 'application/json',
                                 dataType: 'json'
                             });
-                            message = supported === false ? unsupportedMessage : '';
+                            if (supported === false && requestRevision === inputRevision && row.isConnected) {
+                                input.setAttribute('aria-invalid', 'true');
+                            }
                         } catch {
-                            message = failedMessage;
-                        }
-                        if (requestRevision === inputRevision && row.isConnected) {
-                            status.textContent = message;
+                            // A failed check does not mean the URL is unsupported.
                         }
                     }
 
                     function scheduleUrlCheck(value) {
                         clearTimeout(timer);
                         const requestRevision = ++inputRevision;
-                        status.textContent = '';
+                        input.removeAttribute('aria-invalid');
                         const url = value.trim();
                         if (!url) return;
                         timer = setTimeout(() => checkUrl(url, requestRevision), 400);
