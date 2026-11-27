@@ -53,6 +53,9 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// </summary>
     public static Plugin? Instance { get; private set; }
 
+    internal static string HttpUserAgent { get; } =
+        $"MagicCollections/{typeof(Plugin).Assembly.GetName().Version?.ToString(3) ?? "1.0"}";
+
     /// <inheritdoc />
     public IEnumerable<PluginPageInfo> GetPages()
     {

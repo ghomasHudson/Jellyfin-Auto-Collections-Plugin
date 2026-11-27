@@ -7,7 +7,7 @@ public sealed class PluginConfiguration : BasePluginConfiguration
     public string[] SourceUrls { get; set; } = [];
     public string TraktClientId { get; set; } = string.Empty;
     public bool PosterBackgroundImage { get; set; } = true;
-    public bool PosterIcon { get; set; } = true;
+    public bool PosterIcon { get; set; }
     public bool PosterListName { get; set; } = true;
     public bool VerboseLogging { get; set; }
 }

@@ -41,7 +41,7 @@ async function testPage() {
     const pastedTraktList = 'https://trakt.tv/users/Justin/lists/OPEN-YOUR-EYES/?access_token=example-token#example-fragment';
     const cleanTraktList = 'https://app.trakt.tv/users/justin/lists/open-your-eyes';
     const checked = [];
-    let saved = { SourceUrls: [unsupported], PosterBackgroundImage: true, PosterIcon: true, PosterListName: true };
+    let saved = { SourceUrls: [unsupported], PosterBackgroundImage: true, PosterListName: true };
     let saveCount = 0;
     let pendingCheck;
     let connected = false;
@@ -125,8 +125,9 @@ async function testPage() {
         const borderColor = (index = 1) => getComputedStyle(field(index)).borderTopColor;
         const red = 'rgb(229, 57, 53)';
         await until(() => field(), 'The configuration did not load.');
-        if (posterOptions.length !== 3 || posterOptions.some(option => !option.checked)) {
-            throw new Error('All three poster options should start checked.');
+        if (posterOptions.length !== 3 || form.elements.PosterIcon.checked ||
+                !form.elements.PosterBackgroundImage.checked || !form.elements.PosterListName.checked) {
+            throw new Error('Only the poster background image and list name should start checked.');
         }
         if (posterToggle?.textContent.trim() !== 'Poster' || visiblePosterOptions() !== 0) {
             throw new Error('The Poster section should start collapsed.');
@@ -210,7 +211,7 @@ async function testPage() {
         }
         save.click();
         await until(() => saveCount === 1 && saved.SourceUrls.length === 1 && saved.SourceUrls[0] === unsupported, 'Save did not keep the unsupported URL.');
-        if (saved.PosterIcon !== false || saved.PosterBackgroundImage !== true || saved.PosterListName !== true) {
+        if (saved.PosterIcon !== true || saved.PosterBackgroundImage !== true || saved.PosterListName !== true) {
             throw new Error('Save did not keep the selected poster options.');
         }
         if (saved.VerboseLogging !== true) throw new Error('Save did not enable verbose logging.');
@@ -260,7 +261,7 @@ async function testPage() {
         advancedToggle.click();
         verboseLogging.click();
         document.querySelector('#magicCollectionsPage').dispatchEvent(new Event('pageshow'));
-        await until(() => !form.elements.PosterIcon.checked && verboseLogging.checked, 'Reloading did not restore the saved checkbox states.');
+        await until(() => form.elements.PosterIcon.checked && verboseLogging.checked, 'Reloading did not restore the saved checkbox states.');
         verboseLogging.click();
         save.click();
         await until(() => saveCount === 4 && saved.VerboseLogging === false, 'Save did not disable verbose logging.');

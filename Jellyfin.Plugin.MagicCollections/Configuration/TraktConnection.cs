@@ -17,7 +17,6 @@ public sealed class TraktConnection(HttpClient http, Func<PluginConfiguration> c
     private const string BundledClientId = "ciP9eCYn_QzrN3q_7LABgpl6B-wi5UIdOgvZz3Jg1Fc";
     private const string StoreName = "trakt-connection.json";
     private const string ReconnectNotice = "Trakt rejected the authorization. Use Connect Trakt in the Magic Collections settings.";
-    private static readonly string UserAgent = $"MagicCollections/{typeof(TraktConnection).Assembly.GetName().Version?.ToString(3) ?? "1.0"}";
     private static readonly TimeSpan SignInLifetime = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan RefreshMargin = TimeSpan.FromMinutes(5);
     private readonly string _directory = Path.Combine(dataPath, "magic-collections");
@@ -292,7 +291,7 @@ public sealed class TraktConnection(HttpClient http, Func<PluginConfiguration> c
     {
         // Trakt's OAuth endpoint can reject requests without a User-Agent before processing the grant.
         request.Headers.Add("trakt-api-key", clientId);
-        request.Headers.UserAgent.ParseAdd(UserAgent);
+        request.Headers.UserAgent.ParseAdd(Plugin.HttpUserAgent);
     }
 
     private async Task<StoredConnection?> ReadAsync(CancellationToken cancellationToken)

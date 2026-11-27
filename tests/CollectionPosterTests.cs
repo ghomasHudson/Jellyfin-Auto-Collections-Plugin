@@ -21,13 +21,17 @@ public class CollectionPosterTests
     private static readonly Uri ListImage = new("https://example.com/list.jpg");
 
     [Fact]
-    public async Task Saves_a_black_portrait_PNG_with_white_title_text_as_the_primary_image()
+    public async Task Saves_a_black_portrait_PNG_with_white_title_text_and_no_icon_by_default()
     {
         var collection = new TestCollection { Id = Guid.NewGuid(), Name = "Festival picks" };
-        using var host = new JellyfinBoundary(collection);
+        var responses = new RecordedHttpResponses();
+        responses.Record(SourceIcon.AbsoluteUri, () => new(HttpStatusCode.OK) { Content = new ByteArrayContent(EncodeSolidImage(24)) });
+        using var http = new HttpClient(responses);
+        using var host = new JellyfinBoundary(collection, imageHttp: http);
 
-        await host.Library.EnsurePosterAsync(collection.Id, [], null, CancellationToken.None);
+        await host.Library.EnsurePosterAsync(collection.Id, [SourceIcon], null, CancellationToken.None);
 
+        Assert.Empty(responses.Requests);
         Assert.Equal("image/png", host.MimeType);
         Assert.Equal(ImageType.Primary, Assert.Single(collection.ImageInfos).Type);
         Assert.Equal(ItemUpdateType.ImageUpdate, collection.LastUpdate);
@@ -36,6 +40,7 @@ public class CollectionPosterTests
         Assert.Equal(SKColors.Black, poster.GetPixel(0, 0));
         Assert.Equal(SKColors.Black, poster.GetPixel(poster.Width - 1, poster.Height - 1));
         Assert.Contains(SKColors.White, poster.Pixels);
+        Assert.DoesNotContain(SKColors.OrangeRed, poster.Pixels);
     }
 
     [Theory]
@@ -134,7 +139,7 @@ public class CollectionPosterTests
         // An ICO can contain a PNG frame.
         responses.Record(fallback.AbsoluteUri, () => new(HttpStatusCode.OK) { Content = new ByteArrayContent(WrapInIcon(data.ToArray())) });
         using var http = new HttpClient(responses);
-        using var host = new JellyfinBoundary(collection, imageHttp: http);
+        using var host = new JellyfinBoundary(collection, imageHttp: http, config: new() { PosterIcon = true });
 
         await host.Library.EnsurePosterAsync(collection.Id, [SourceIcon, fallback], null, CancellationToken.None);
 
@@ -149,6 +154,20 @@ public class CollectionPosterTests
         Assert.InRange(logo.Max(pixel => pixel.x) - logo.Min(pixel => pixel.x) + 1, 81, 84);
         Assert.Equal(SKColors.Black, poster.GetPixel(poster.Width / 2 + 48, (top + bottom) / 2));
         Assert.Contains(Enumerable.Range(bottom + 1, poster.Height - bottom - 1), row => HasWhitePixels(poster, row));
+    }
+
+    [Fact]
+    public async Task Draws_the_Trakt_favicon_when_the_image_host_requires_a_User_Agent()
+    {
+        var collection = new TestCollection { Id = Guid.NewGuid(), Name = "Trakt picks" };
+        using var http = new HttpClient(new TraktFaviconResponse(EncodeSolidImage(24)));
+        using var host = new JellyfinBoundary(collection, imageHttp: http, config: new() { PosterIcon = true });
+
+        await host.Library.EnsurePosterAsync(collection.Id, [new Uri("https://app.trakt.tv/pwa/android/icon_192.png")],
+            null, CancellationToken.None);
+
+        using var poster = DecodePoster(host);
+        Assert.Contains(SKColors.OrangeRed, poster.Pixels);
     }
 
     [Fact]
@@ -169,7 +188,7 @@ public class CollectionPosterTests
         responses.Record(SourceIcon.AbsoluteUri, () => new(HttpStatusCode.OK) { Content = new ByteArrayContent(EncodeSolidImage(24)) });
         responses.Record(ListImage.AbsoluteUri, () => new(HttpStatusCode.OK) { Content = new ByteArrayContent(data.ToArray()) });
         using var http = new HttpClient(responses);
-        using var host = new JellyfinBoundary(collection, imageHttp: http);
+        using var host = new JellyfinBoundary(collection, imageHttp: http, config: new() { PosterIcon = true });
 
         await host.Library.EnsurePosterAsync(collection.Id, [SourceIcon], ListImage, CancellationToken.None);
 
@@ -205,7 +224,7 @@ public class CollectionPosterTests
             _ => throw new HttpRequestException("Connection failed.")
         });
         using var http = new HttpClient(responses);
-        using var host = new JellyfinBoundary(collection, imageHttp: http);
+        using var host = new JellyfinBoundary(collection, imageHttp: http, config: new() { PosterIcon = true });
 
         await host.Library.EnsurePosterAsync(collection.Id, [SourceIcon], null, CancellationToken.None);
 
@@ -236,7 +255,7 @@ public class CollectionPosterTests
             _ => new(HttpStatusCode.NotFound)
         });
         using var http = new HttpClient(responses);
-        using var host = new JellyfinBoundary(collection, imageHttp: http);
+        using var host = new JellyfinBoundary(collection, imageHttp: http, config: new() { PosterIcon = true });
 
         await host.Library.EnsurePosterAsync(collection.Id, [SourceIcon], ListImage, CancellationToken.None);
 
@@ -258,7 +277,7 @@ public class CollectionPosterTests
         var url = isListImage ? ListImage : SourceIcon;
         responses.RecordPending(url.AbsoluteUri, pending.Task);
         using var http = new HttpClient(responses);
-        using var host = new JellyfinBoundary(collection, imageHttp: http);
+        using var host = new JellyfinBoundary(collection, imageHttp: http, config: new() { PosterIcon = true });
         using var cancellation = new CancellationTokenSource();
 
         var generating = host.Library.EnsurePosterAsync(collection.Id,
@@ -375,7 +394,7 @@ public class CollectionPosterTests
         var collection = new TestCollection { Id = Guid.NewGuid(), Name = "Festival picks", ImageInfos = [original] };
         var responses = new RecordedHttpResponses();
         using var http = new HttpClient(responses);
-        using var host = new JellyfinBoundary(collection, imageHttp: http);
+        using var host = new JellyfinBoundary(collection, imageHttp: http, config: new() { PosterIcon = true });
 
         await host.Library.EnsurePosterAsync(collection.Id, [SourceIcon], ListImage, CancellationToken.None);
 
@@ -517,6 +536,20 @@ public class CollectionPosterTests
         var selected = ink.Where(pixel => pixel.X - left < maxWidth).ToArray();
         var top = selected.Min(pixel => pixel.Y);
         return selected.Select(pixel => (pixel.X - left, pixel.Y - top)).ToHashSet();
+    }
+
+    private sealed class TraktFaviconResponse(byte[] icon) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Assert.Equal("https://app.trakt.tv/pwa/android/icon_192.png", request.RequestUri?.AbsoluteUri);
+            Assert.Null(request.Headers.Authorization);
+            Assert.False(request.Headers.Contains("trakt-api-key"));
+            return Task.FromResult(request.Headers.UserAgent.Any(value => value.Product?.Name == "MagicCollections")
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(icon) }
+                : new HttpResponseMessage(HttpStatusCode.Forbidden));
+        }
     }
 
     private sealed class JellyfinBoundary : IDisposable

@@ -51,7 +51,9 @@ internal sealed class CollectionImageClient(HttpClient http)
         }
 
         // The source HTTP client does not follow redirects from the handler-approved URL.
-        using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.UserAgent.ParseAdd(Plugin.HttpUserAgent);
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .ConfigureAwait(false);
         if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength > maxBytes)
         {

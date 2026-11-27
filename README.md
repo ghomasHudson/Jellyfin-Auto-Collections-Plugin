@@ -124,7 +124,7 @@ The container adds a **Magic Collections Test Movies** library for `/test-media`
 1. Choose a public MDBList containing one of the test movies and check that the scanned item has a matching provider ID.
 2. Open **Dashboard → Plugins → Magic Collections**. Save the full list page URL and reopen the page to confirm it was saved.
 3. Open **Dashboard → Scheduled Tasks → Sync Magic Collections**. Check that it has a daily trigger, then select **Run now**.
-4. Open **Collections** in Jellyfin. Check for the matching item and a black poster with the MDBList favicon above the collection name.
+4. Open **Collections** in Jellyfin. Check for the matching item and a black poster with the collection name. To include the MDBList favicon on new posters, enable **Poster → Icon** in the plugin settings.
 5. Set a custom poster for the collection. Run the task again and confirm it keeps your poster.
 
 After editing the plugin, rerun `docker compose up --build -d` to install the rebuilt plugin.
