@@ -34,7 +34,8 @@ Jellyfin plugin to make and update collections based on internet lists such as I
 - mdblist - e.g. [Top Movies of the week](https://mdblist.com/lists/garycrawfordgc/top-movies-of-the-week)
 - [Steven Lu Popular movies](https://github.com/sjlu/popular-movies)
 - [BFI](https://www.bfi.org.uk/articles/type/lists)
-- IMDb (official Jellyfin container on Linux x64) – public title lists, [Top 250 Movies](https://www.imdb.com/chart/top/), and [Top 250 TV Shows](https://www.imdb.com/chart/toptv/). The first IMDb sync downloads the helper automatically (about 252 MB). You don’t need an IMDb account or a separate browser install.
+- [IMDb] – public title lists, [Top 250 Movies](https://www.imdb.com/chart/top/), and [Top 250 TV Shows](https://www.imdb.com/chart/toptv/). The first IMDb sync downloads the helper automatically (about 252 MB). You don’t need an IMDb account or a separate browser install.
+- [Trakt public lists and charts](docs/trakt.md)
 
 ### Not yet supported
 
@@ -47,7 +48,6 @@ Follow these issues for the status of other sources from Jellyfin Auto Collectio
 - [Radarr tags](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/19)
 - [Sonarr tags](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/20)
 - [They Shoot Pictures, Don’t They? (TSPDT)](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/17)
-- [Trakt lists and charts](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/15)
 
 # Developers
 

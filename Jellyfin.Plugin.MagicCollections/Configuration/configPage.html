@@ -31,6 +31,15 @@
                     <h3 id="magicCollectionsUrlsHeading">Source list URLs</h3>
                     <p class="fieldDescription">Add URLs for supported source lists.</p>
                     <div id="magicCollectionsUrls" role="group" aria-labelledby="magicCollectionsUrlsHeading"></div>
+                    <details class="settingsSection">
+                        <summary>Trakt</summary>
+                        <p class="fieldDescription">With the bundled Client ID, you don't need to sign in to Trakt or register an app.</p>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="text" name="TraktClientId" label="Trakt Client ID override (optional)" aria-label="Trakt Client ID override (optional)" aria-describedby="magicCollectionsTraktClientIdHelp" autocomplete="off" autocapitalize="off" spellcheck="false" />
+                            <div id="magicCollectionsTraktClientIdHelp" class="fieldDescription">Paste only the Client ID, or leave blank to use the bundled ID.</div>
+                        </div>
+                        <p class="fieldDescription">Magic Collections uses Trakt but is not endorsed or certified by Trakt.</p>
+                    </details>
                     <details id="magicCollectionsPoster" class="settingsSection">
                         <summary>Poster</summary>
                         <p class="fieldDescription">Choose what to include on new posters. Existing posters are not changed.</p>
@@ -67,6 +76,7 @@
                 const urls = page.querySelector('#magicCollectionsUrls');
                 const template = page.querySelector('#magicCollectionsUrlRow');
                 const checkboxOptions = form.querySelectorAll('input[type="checkbox"]');
+                const traktClientId = form.elements.TraktClientId;
 
                 // Jellyfin translates template placeholders in the whole page, including inline scripts.
                 function urlLabel(index) {
@@ -138,10 +148,13 @@
                     }
                 }
 
-                page.addEventListener('pageshow', () => withConfiguration(config => {
+                function renderConfiguration(config) {
                     renderUrls(config.SourceUrls || []);
                     checkboxOptions.forEach(option => { option.checked = config[option.name] ?? option.defaultChecked; });
-                }));
+                    traktClientId.value = config.TraktClientId ?? '';
+                }
+
+                page.addEventListener('pageshow', () => withConfiguration(renderConfiguration));
                 // Keep a blank row from collapsing on blur before the Save click completes.
                 form.querySelector('button[type="submit"]').addEventListener('mousedown', event => event.preventDefault());
                 form.addEventListener('submit', event => {
@@ -149,8 +162,9 @@
                     return withConfiguration(async config => {
                         config.SourceUrls = Array.from(urls.querySelectorAll('input'), input => input.value.trim()).filter(Boolean);
                         checkboxOptions.forEach(option => { config[option.name] = option.checked; });
+                        config.TraktClientId = traktClientId.value.trim();
                         const result = await ApiClient.updatePluginConfiguration(pluginId, config);
-                        renderUrls(config.SourceUrls);
+                        renderConfiguration(await ApiClient.getPluginConfiguration(pluginId));
                         Dashboard.processPluginConfigurationUpdateResult(result);
                     });
                 });
