@@ -35,9 +35,12 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IImdbPageRenderer, BundledImdbPageRenderer>();
         serviceCollection.AddSingleton<ISourceListHandler, ImdbHandler>();
         serviceCollection.AddSingleton<Func<PluginConfiguration>>(() => Plugin.Instance?.Configuration ?? new PluginConfiguration());
+        serviceCollection.AddSingleton(services => new TraktConnection(
+            services.GetRequiredService<SourceListHttpClient>(), services.GetRequiredService<Func<PluginConfiguration>>(),
+            services.GetRequiredService<IApplicationPaths>().DataPath, TimeProvider.System));
         serviceCollection.AddSingleton<ISourceListHandler>(services =>
             new TraktHandler(services.GetRequiredService<SourceListHttpClient>(),
-                services.GetRequiredService<Func<PluginConfiguration>>()));
+                services.GetRequiredService<Func<PluginConfiguration>>(), services.GetRequiredService<TraktConnection>()));
         serviceCollection.AddSingleton<ICollectionLibrary, JellyfinCollectionLibrary>();
         serviceCollection.AddSingleton<CollectionSync>();
     }

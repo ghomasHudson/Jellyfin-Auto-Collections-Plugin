@@ -35,7 +35,7 @@ Jellyfin plugin to make and update collections based on internet lists such as I
 - [Steven Lu Popular movies](https://github.com/sjlu/popular-movies)
 - [BFI](https://www.bfi.org.uk/articles/type/lists)
 - [IMDb] – public title lists, [Top 250 Movies](https://www.imdb.com/chart/top/), and [Top 250 TV Shows](https://www.imdb.com/chart/toptv/). The first IMDb sync downloads the helper automatically (about 252 MB). You don’t need an IMDb account or a separate browser install.
-- [Trakt public lists and charts](docs/trakt.md)
+- [Trakt lists and charts](docs/trakt.md)
 
 ### Not yet supported
 

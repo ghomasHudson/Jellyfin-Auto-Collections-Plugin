@@ -40,9 +40,14 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public override void UpdateConfiguration(BasePluginConfiguration configuration)
     {
         // Jellyfin calls this for dashboard and direct API saves, before writing the XML.
-        if (configuration is PluginConfiguration { SourceUrls: { } urls } settings)
+        if (configuration is PluginConfiguration settings)
         {
-            settings.SourceUrls = urls.Select(TraktHandler.CanonicalizeConfiguredUrl).ToArray();
+            settings.SourceUrls = (settings.SourceUrls ?? []).Select(TraktHandler.CanonicalizeConfiguredUrl).ToArray();
+            settings.PrivateTraktUrls = (settings.PrivateTraktUrls ?? [])
+                .Select(TraktHandler.CanonicalizePersonalList)
+                .OfType<string>()
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
         }
 
         base.UpdateConfiguration(configuration);

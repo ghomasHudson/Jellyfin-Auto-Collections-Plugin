@@ -11,6 +11,7 @@ const page = readFileSync(new URL('../Jellyfin.Plugin.MagicCollections/Configura
 const theme = `<style>
     input[is="emby-input"] { display: block; border: 0.16em solid #292929; }
     input[is="emby-input"]:focus { border-color: #00a4dc; }
+    .block { display: block; }
 </style>`;
 const harness = `${theme}<script>(${testPage})()</script>`;
 const fixture = page.replace('</body>', `${harness}</body>`).replaceAll('&', '&amp;').replaceAll('"', '&quot;');
@@ -43,6 +44,8 @@ async function testPage() {
     let saved = { SourceUrls: [unsupported], PosterBackgroundImage: true, PosterIcon: true, PosterListName: true };
     let saveCount = 0;
     let pendingCheck;
+    let connected = false;
+    let submittedResponse;
     window.Dashboard = {
         showLoadingMsg() {},
         hideLoadingMsg() {},
@@ -57,6 +60,19 @@ async function testPage() {
         },
         getUrl(path) { return path; },
         async ajax(request) {
+            if (request.url === 'MagicCollections/Trakt/Status') return { Connected: connected, Account: connected ? 'Example Owner' : null };
+            if (request.url === 'MagicCollections/Trakt/Start') {
+                return { AuthorizationUrl: 'https://auth.trakt.tv/oauth/authorize?state=test-state' };
+            }
+            if (request.url === 'MagicCollections/Trakt/Complete') {
+                submittedResponse = JSON.parse(request.data);
+                connected = true;
+                return { Connected: connected, Account: 'Example Owner' };
+            }
+            if (request.url === 'MagicCollections/Trakt/Disconnect') {
+                connected = false;
+                return { Connected: false };
+            }
             const url = JSON.parse(request.data).Url;
             checked.push(url);
             if (url === uncheckable) throw new Error('Check failed');
@@ -110,7 +126,7 @@ async function testPage() {
         }
         traktToggle.click();
         const traktPanel = traktToggle.parentElement;
-        if (!traktPanel.innerText.includes("you don't need to sign in to Trakt or register an app") ||
+        if (!traktPanel.innerText.includes("Public lists and charts don't require a Trakt account or app") ||
                 !traktPanel.innerText.includes('Magic Collections uses Trakt but is not endorsed or certified by Trakt') ||
                 !traktClientId.checkVisibility() ||
                 !traktPanel.innerText.includes('Paste only the Client ID, or leave blank to use the bundled ID.')) {
@@ -261,6 +277,35 @@ async function testPage() {
         await until(() => saveCount === 7 && field(2)?.value === cleanTraktList,
             'Save should display the canonical Trakt URL returned by Jellyfin, without tokens.');
         if (field().value !== delayed || invalid(2)) throw new Error('Save should keep the other URL and render the canonical Trakt URL normally.');
+        const connect = traktPanel.querySelector('button[id="magicTraktConnect"]');
+        const disconnect = traktPanel.querySelector('button[id="magicTraktDisconnect"]');
+        const status = traktPanel.querySelector('#magicTraktStatus');
+        if (!connect || !disconnect || !status) throw new Error('The Trakt panel is missing its connection controls.');
+        if (disconnect.checkVisibility()) throw new Error('Disconnect should be hidden before connecting.');
+        enter(traktClientId, clientId);
+        save.click();
+        await until(() => saveCount === 8 && !connect.disabled, 'Saving the sign-in Client ID did not finish.');
+        connect.click();
+        const openTrakt = traktPanel.querySelector('#magicTraktOpen');
+        await until(() => openTrakt?.checkVisibility() && openTrakt.href.startsWith('https://auth.trakt.tv/'),
+            'Connect did not display the Trakt authorization link.');
+        const response = traktPanel.querySelector('#magicTraktResponse');
+        const finish = traktPanel.querySelector('#magicTraktFinish');
+        enter(response, '{"code":"one-time-code","state":"test-state"}');
+        finish.click();
+        await until(() => status.textContent.includes('Example Owner'), 'Connected account name was not shown.');
+        if (submittedResponse?.Code !== 'one-time-code' || submittedResponse.State !== 'test-state' ||
+                response.value || openTrakt.checkVisibility()) {
+            throw new Error('The one-time response was not submitted and cleared.');
+        }
+        enter(form.elements.PrivateTraktLists, cleanTraktList);
+        save.click();
+        await until(() => saveCount === 9 && saved.PrivateTraktUrls?.[0] === cleanTraktList && !disconnect.disabled,
+            'Private list selection was not saved separately.');
+        if (JSON.stringify(saved).includes('one-time-code')) throw new Error('The OAuth response leaked into plugin settings.');
+        window.confirm = () => true;
+        disconnect.click();
+        await until(() => status.textContent.includes('Not connected'), 'Disconnect did not update the account status.');
         result.textContent = 'PASS';
     } catch (error) {
         result.textContent = error.message;

@@ -5,11 +5,11 @@ using Jellyfin.Plugin.MagicCollections.Configuration;
 
 namespace Jellyfin.Plugin.MagicCollections.Sync;
 
-public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> configuration) : ISourceListHandler
+public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> configuration,
+    TraktConnection? connection = null) : ISourceListHandler
 {
     private static readonly Uri ApiOrigin = new("https://api.trakt.tv");
     private static readonly Uri TraktFavicon = new("https://app.trakt.tv/pwa/android/icon_192.png");
-    private static readonly string UserAgent = $"MagicCollections/{typeof(TraktHandler).Assembly.GetName().Version?.ToString(3) ?? "1.0"}";
     private const string BundledClientId = "ciP9eCYn_QzrN3q_7LABgpl6B-wi5UIdOgvZz3Jg1Fc";
     private const int PageSize = 50;
     private const int ChartEntryCap = 100;
@@ -25,9 +25,18 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
             ? source.CanonicalUrl.AbsoluteUri
             : url;
 
-    public async Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken)
+    internal static string? CanonicalizePersonalList(string? url) =>
+        Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri) &&
+        ParseSource(uri) is { Owner: not null } source ? source.CanonicalUrl.AbsoluteUri : null;
+
+    public Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken) =>
+        ReadSourceAsync(RequireSource(url), authenticated: false, cancellationToken);
+
+    internal Task<SourceList> ReadPrivateAsync(Uri url, CancellationToken cancellationToken) =>
+        ReadSourceAsync(RequireSource(url), authenticated: true, cancellationToken);
+
+    private async Task<SourceList> ReadSourceAsync(Source source, bool authenticated, CancellationToken cancellationToken)
     {
-        var source = RequireSource(url);
         var clientId = configuration().TraktClientId?.Trim();
         if (string.IsNullOrEmpty(clientId))
         {
@@ -35,35 +44,44 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
         }
         else if (clientId.Any(c => c is < '!' or > '~'))
         {
-            throw new SourceListReadException(source.CanonicalUrl, "Invalid Trakt Client ID in plugin settings.");
+            throw ReadError("Invalid Trakt Client ID in plugin settings.");
         }
 
         try
         {
             var (name, description) = source.Chart is { } chart
                 ? (chart.Name, null)
-                : await ReadSummaryAsync(source, clientId, cancellationToken).ConfigureAwait(false);
-            var items = await ReadPagesAsync(source, clientId, cancellationToken).ConfigureAwait(false);
+                : await ReadSummaryAsync(source, clientId, authenticated, cancellationToken).ConfigureAwait(false);
+            var items = await ReadPagesAsync(source, clientId, authenticated, cancellationToken).ConfigureAwait(false);
             return new(name, items, description) { FaviconUrls = [TraktFavicon] };
         }
         catch (JsonException)
         {
-            throw new SourceListReadException(source.CanonicalUrl, "Invalid Trakt source list data.");
+            throw ReadError("Invalid Trakt source list data.");
         }
-        catch (Exception exception) when (exception is HttpRequestException or IOException)
+        catch (TraktConnectionException exception)
         {
-            throw new SourceListReadException(source.CanonicalUrl, "Trakt API request failed.");
+            throw ReadError(exception.Message);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or IOException or UnauthorizedAccessException)
+        {
+            throw ReadError("Trakt API request or connection store failed.");
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new SourceListReadException(source.CanonicalUrl, "Trakt API request timed out.");
+            throw ReadError("Trakt API request timed out.");
         }
+
+        SourceListReadException ReadError(string reason) => new(ErrorSource(source, authenticated), reason);
     }
 
-    private async Task<(string? Name, string? Description)> ReadSummaryAsync(Source source, string clientId,
+    private static Uri ErrorSource(Source source, bool authenticated) =>
+        authenticated ? ApiOrigin : source.CanonicalUrl;
+
+    private async Task<(string? Name, string? Description)> ReadSummaryAsync(Source source, string clientId, bool authenticated,
         CancellationToken cancellationToken)
     {
-        using var response = await FetchAsync(source, source.ApiPath + "/", clientId, cancellationToken, allowNoContent: true)
+        using var response = await FetchAsync(source, source.ApiPath + "/", clientId, authenticated, cancellationToken, allowNoContent: !authenticated)
             .ConfigureAwait(false);
         // Some official lists have no user-list summary but do expose items on the public list route.
         if (response.StatusCode == HttpStatusCode.NoContent)
@@ -84,7 +102,7 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
         return (name.GetString(), string.IsNullOrEmpty(description) ? null : description);
     }
 
-    private async Task<List<MediaIdentity>> ReadPagesAsync(Source source, string clientId, CancellationToken cancellationToken)
+    private async Task<List<MediaIdentity>> ReadPagesAsync(Source source, string clientId, bool authenticated, CancellationToken cancellationToken)
     {
         var items = new List<MediaIdentity>();
         var chart = source.Chart;
@@ -94,7 +112,7 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
         for (var page = 1; ; page++)
         {
             var endpoint = FormattableString.Invariant($"{path}?page={page}&limit={PageSize}");
-            using var response = await FetchAsync(source, endpoint, clientId, cancellationToken).ConfigureAwait(false);
+            using var response = await FetchAsync(source, endpoint, clientId, authenticated, cancellationToken).ConfigureAwait(false);
             using var data = await ReadJsonAsync(response, cancellationToken).ConfigureAwait(false);
             var root = data.RootElement;
             if (root.ValueKind != JsonValueKind.Array)
@@ -168,18 +186,24 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
 
     private readonly record struct Pagination(int Limit, int PageCount, int ItemCount);
 
-    private async Task<HttpResponseMessage> FetchAsync(Source source, string path, string clientId,
+    private async Task<HttpResponseMessage> FetchAsync(Source source, string path, string clientId, bool authenticated,
         CancellationToken cancellationToken, bool allowNoContent = false)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiOrigin, path))
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiOrigin, path));
+        HttpResponseMessage response;
+        if (authenticated)
         {
-            Content = new ByteArrayContent([])
-        };
-        request.Content.Headers.ContentType = new("application/json");
-        request.Headers.UserAgent.ParseAdd(UserAgent);
-        request.Headers.Add("trakt-api-version", "2");
-        request.Headers.Add("trakt-api-key", clientId);
-        var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            if (connection is null || source.Owner is null)
+            {
+                throw new TraktConnectionException("Connect Trakt and enter a personal list URL.");
+            }
+            response = await connection.SendListRequestAsync(request, source.Owner, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            TraktConnection.AddApiHeaders(request, clientId);
+            response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        }
         if (response.StatusCode == HttpStatusCode.OK || (allowNoContent && response.StatusCode == HttpStatusCode.NoContent))
         {
             return response;
@@ -199,7 +223,7 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
                 };
             }
 
-            throw new SourceListReadException(source.CanonicalUrl, reason);
+            throw new SourceListReadException(ErrorSource(source, authenticated), reason);
         }
     }
 
@@ -267,12 +291,12 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
         }
     }
 
-    private sealed record Source(string ApiPath, Uri CanonicalUrl, Chart? Chart = null);
+    private sealed record Source(string ApiPath, Uri CanonicalUrl, Chart? Chart = null, string? Owner = null);
 
     private sealed record Chart(string Name, string MediaKey, SourceMediaType Type, bool Wrapped);
 
     private static Source RequireSource(Uri url) =>
-        ParseSource(url) ?? throw new ArgumentException("Not a public Trakt source list URL.", nameof(url));
+        ParseSource(url) ?? throw new ArgumentException("Not a Trakt source list URL.", nameof(url));
 
     private static Source? ParseSource(Uri url)
     {
@@ -289,7 +313,7 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
             Uri.UnescapeDataString(list) is var listSlug && IsSlug(listSlug))
         {
             var path = $"/users/{userSlug.ToLowerInvariant()}/lists/{listSlug.ToLowerInvariant()}";
-            return new(path, new("https://app.trakt.tv" + path));
+            return new(path, new("https://app.trakt.tv" + path), Owner: userSlug);
         }
 
         // Additional query parameters might change chart membership; only accept unfiltered charts.

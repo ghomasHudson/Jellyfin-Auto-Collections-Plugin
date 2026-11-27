@@ -23,6 +23,9 @@
             #magicCollectionsDebug > .checkboxContainer {
                 padding-block: .6em;
             }
+            #magicTraktDisconnect[hidden], #magicTraktHandoff[hidden] {
+                display: none;
+            }
         </style>
         <div data-role="content">
             <div class="content-primary">
@@ -33,10 +36,31 @@
                     <div id="magicCollectionsUrls" role="group" aria-labelledby="magicCollectionsUrlsHeading"></div>
                     <details class="settingsSection">
                         <summary>Trakt</summary>
-                        <p class="fieldDescription">With the bundled Client ID, you don't need to sign in to Trakt or register an app.</p>
+                        <p class="fieldDescription">Public lists and charts don't require a Trakt account or app.</p>
                         <div class="inputContainer">
                             <input is="emby-input" type="text" name="TraktClientId" label="Trakt Client ID override (optional)" aria-label="Trakt Client ID override (optional)" aria-describedby="magicCollectionsTraktClientIdHelp" autocomplete="off" autocapitalize="off" spellcheck="false" />
                             <div id="magicCollectionsTraktClientIdHelp" class="fieldDescription">Paste only the Client ID, or leave blank to use the bundled ID.</div>
+                        </div>
+                        <h3>Import private lists from Trakt</h3>
+                        <p class="fieldDescription">Save a Client ID from a Trakt app that allows sign-in. The bundled ID is for public lists and charts. <a href="https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/blob/main/docs/trakt.md#import-a-private-trakt-list" target="_blank" rel="noopener noreferrer">Set up Trakt sign-in</a></p>
+                        <p id="magicTraktStatus" role="status">Checking Trakt connection…</p>
+                        <button is="emby-button" type="button" id="magicTraktConnect" class="raised block">Connect Trakt</button>
+                        <button is="emby-button" type="button" id="magicTraktDisconnect" class="raised block" hidden>Disconnect Trakt</button>
+                        <div id="magicTraktHandoff" hidden>
+                            <ol>
+                                <li><a id="magicTraktOpen" target="_blank" rel="noopener noreferrer">Open Trakt and approve access</a> in a new tab.</li>
+                                <li>Click <strong>Copy response</strong> on the callback page, then paste it here.</li>
+                            </ol>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="magicTraktResponse">One-time Trakt response</label>
+                                <textarea class="emby-input" id="magicTraktResponse" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+                            </div>
+                            <button is="emby-button" type="button" id="magicTraktFinish" class="raised block">Finish connecting</button>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="magicTraktLists">Private Trakt list URLs to share in Jellyfin</label>
+                            <textarea class="emby-input" id="magicTraktLists" name="PrivateTraktLists" aria-describedby="magicTraktListsHelp" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+                            <p class="fieldDescription" id="magicTraktListsHelp">Enter one personal list URL per line from the connected account. Saving these URLs shares their names, descriptions, and matching titles as ordinary Jellyfin collections. Disconnecting stops future reads; it does not remove the collections.</p>
                         </div>
                         <p class="fieldDescription">Magic Collections uses Trakt but is not endorsed or certified by Trakt.</p>
                     </details>
@@ -77,6 +101,99 @@
                 const template = page.querySelector('#magicCollectionsUrlRow');
                 const checkboxOptions = form.querySelectorAll('input[type="checkbox"]');
                 const traktClientId = form.elements.TraktClientId;
+                const privateTraktLists = form.elements.PrivateTraktLists;
+                const traktStatus = page.querySelector('#magicTraktStatus');
+                const connectTrakt = page.querySelector('#magicTraktConnect');
+                const disconnectTrakt = page.querySelector('#magicTraktDisconnect');
+                const traktHandoff = page.querySelector('#magicTraktHandoff');
+                const openTrakt = page.querySelector('#magicTraktOpen');
+                const traktResponse = page.querySelector('#magicTraktResponse');
+                const finishTrakt = page.querySelector('#magicTraktFinish');
+                let traktBusy = false;
+
+                function traktRequest(action, body) {
+                    const request = {
+                        type: action === 'Status' ? 'GET' : 'POST',
+                        url: ApiClient.getUrl('MagicCollections/Trakt/' + action),
+                        dataType: 'json'
+                    };
+                    if (body) {
+                        request.data = JSON.stringify(body);
+                        request.contentType = 'application/json';
+                    }
+                    return ApiClient.ajax(request);
+                }
+
+                function renderTraktStatus(status) {
+                    traktStatus.textContent = status.Connected ? 'Connected as ' + status.Account + '.' :
+                        status.Notice || 'Not connected to Trakt.';
+                    connectTrakt.textContent = status.Connected ? 'Reconnect Trakt' : 'Connect Trakt';
+                    disconnectTrakt.hidden = !status.Account;
+                }
+
+                async function runTrakt(action, message) {
+                    if (traktBusy) return;
+                    traktBusy = true;
+                    const buttons = [connectTrakt, disconnectTrakt, finishTrakt];
+                    buttons.forEach(button => { button.disabled = true; });
+                    try {
+                        await action();
+                    } catch {
+                        traktStatus.textContent = message;
+                    } finally {
+                        traktBusy = false;
+                        buttons.forEach(button => { button.disabled = false; });
+                    }
+                }
+
+                function closeTraktHandoff() {
+                    traktHandoff.hidden = true;
+                    openTrakt.removeAttribute('href');
+                    traktResponse.value = '';
+                }
+
+                connectTrakt.addEventListener('click', () => runTrakt(async () => {
+                    closeTraktHandoff();
+                    const current = await ApiClient.getPluginConfiguration(pluginId);
+                    const clientId = (current.TraktClientId || '').trim();
+                    if (!clientId || clientId !== traktClientId.value.trim()) {
+                        traktStatus.textContent = 'Save your Trakt Client ID before connecting.';
+                        return;
+                    }
+                    const start = await traktRequest('Start');
+                    const authorize = new URL(start.AuthorizationUrl);
+                    if (authorize.origin !== 'https://auth.trakt.tv' || authorize.pathname !== '/oauth/authorize') {
+                        throw new Error('Unexpected Trakt authorization URL');
+                    }
+                    openTrakt.href = authorize.href;
+                    traktHandoff.hidden = false;
+                    traktStatus.textContent = 'Waiting for Trakt authorization.';
+                    openTrakt.focus();
+                }, 'Could not start Trakt sign-in. Check the saved Client ID and try again.'));
+
+                finishTrakt.addEventListener('click', () => runTrakt(async () => {
+                    let response;
+                    try {
+                        response = JSON.parse(traktResponse.value);
+                    } catch {
+                        // Explain any malformed response without echoing it.
+                    }
+                    if (typeof response?.code !== 'string' || typeof response?.state !== 'string' ||
+                            !response.code.trim() || !response.state.trim()) {
+                        traktStatus.textContent = 'Paste the full response from the callback page.';
+                        return;
+                    }
+                    closeTraktHandoff();
+                    renderTraktStatus(await traktRequest('Complete', { Code: response.code, State: response.state }));
+                }, 'Trakt sign-in could not finish. Start again using Connect Trakt.'));
+
+                disconnectTrakt.addEventListener('click', () => {
+                    if (!window.confirm('Disconnect Trakt? Existing Jellyfin collections will remain.')) return;
+                    return runTrakt(async () => {
+                        closeTraktHandoff();
+                        renderTraktStatus(await traktRequest('Disconnect'));
+                    }, 'Could not disconnect Trakt. Try again.');
+                });
 
                 // Jellyfin translates template placeholders in the whole page, including inline scripts.
                 function urlLabel(index) {
@@ -152,9 +269,18 @@
                     renderUrls(config.SourceUrls || []);
                     checkboxOptions.forEach(option => { option.checked = config[option.name] ?? option.defaultChecked; });
                     traktClientId.value = config.TraktClientId ?? '';
+                    privateTraktLists.value = (config.PrivateTraktUrls || []).join('\n');
                 }
 
-                page.addEventListener('pageshow', () => withConfiguration(renderConfiguration));
+                function refreshTraktStatus() {
+                    return runTrakt(async () => renderTraktStatus(await traktRequest('Status')), 'Could not check Trakt connection.');
+                }
+
+                page.addEventListener('pageshow', () => {
+                    withConfiguration(renderConfiguration);
+                    refreshTraktStatus();
+                });
+                page.addEventListener('pagehide', closeTraktHandoff);
                 // Keep a blank row from collapsing on blur before the Save click completes.
                 form.querySelector('button[type="submit"]').addEventListener('mousedown', event => event.preventDefault());
                 form.addEventListener('submit', event => {
@@ -163,8 +289,10 @@
                         config.SourceUrls = Array.from(urls.querySelectorAll('input'), input => input.value.trim()).filter(Boolean);
                         checkboxOptions.forEach(option => { config[option.name] = option.checked; });
                         config.TraktClientId = traktClientId.value.trim();
+                        config.PrivateTraktUrls = privateTraktLists.value.split(/\r?\n/).map(url => url.trim()).filter(Boolean);
                         const result = await ApiClient.updatePluginConfiguration(pluginId, config);
                         renderConfiguration(await ApiClient.getPluginConfiguration(pluginId));
+                        refreshTraktStatus();
                         Dashboard.processPluginConfigurationUpdateResult(result);
                     });
                 });

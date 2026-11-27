@@ -370,6 +370,132 @@ public sealed class TraktCollectionSyncTests : IDisposable
 
     public void Dispose() => _http.Dispose();
 
+    [Fact]
+    public async Task A_denied_private_page_leaves_the_existing_collection_unchanged_and_public_sync_continues()
+        => await SyncWithTraktAccount(async (sync, _, _) =>
+    {
+        const string chart = "https://trakt.tv/movies/popular";
+        const string chartApi = "https://api.trakt.tv/movies/popular";
+        _responses.Summary("""{"name":"Owner's list","description":"Original notes"}""");
+        _responses.Page(ListItems, 1, 1, 1, Movies(1, 1, wrapped: true));
+        var original = LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
+        var newMember = LibraryItem(SourceMediaType.Movie, "Tmdb", "2");
+        var warnings = new List<string>();
+        Task Run(params string[] publicUrls) => sync.RunAsync(publicUrls, Assert.Fail, default,
+            privateTraktUrls: [ListUrl], reportPrivateFailure: warnings.Add);
+
+        await Run();
+        var collection = Assert.Single(_library.ManagedCollections);
+        Assert.Equal([original], collection.Members);
+        Assert.DoesNotContain(collection.Tags, tag => tag.Contains("open-your-eyes", StringComparison.Ordinal));
+        Assert.Empty(warnings);
+
+        _responses.Summary("""{"name":"Owner's list","description":"New notes"}""");
+        _responses.Page(ListItems, 1, 1, 2, Movies(2, 1, wrapped: true));
+        _responses.Record(ListItems + "?page=2&limit=50", () => new(HttpStatusCode.NotFound));
+        _responses.Page(chartApi, 1, 50, 1, Movies(2, 1));
+        await Run(chart, ListUrl);
+
+        Assert.Equal([original], collection.Members);
+        Assert.Equal("Original notes", collection.Overview);
+        Assert.DoesNotContain("open-your-eyes", Assert.Single(warnings));
+        Assert.Equal([newMember], _library.ManagedCollections.Single(c => c.Name == "Popular Movies").Members);
+        Assert.Equal(5, _responses.Authorizations.Count(header => header == "Bearer access-0"));
+        Assert.Null(_responses.Authorizations[_responses.Requests.IndexOf(chartApi + "?page=1&limit=50")]);
+    });
+
+    [Fact]
+    public async Task Scheduled_reads_refresh_a_token_once_and_reuse_the_rotated_refresh_token()
+        => await SyncWithTraktAccount(async (sync, clock, account) =>
+    {
+        _responses.Summary();
+        _responses.Page(ListItems, 1, 50, 0, "[]");
+        var warnings = new List<string>();
+        Task Run() => sync.RunAsync([], Assert.Fail, default, privateTraktUrls: [ListUrl], reportPrivateFailure: warnings.Add);
+
+        clock.Now += TimeSpan.FromDays(7);
+        await Run();
+        Assert.Equal(["Bearer access-1", "Bearer access-1"], _responses.Authorizations);
+        clock.Now += TimeSpan.FromDays(7);
+        await Run();
+        Assert.Equal(["refresh-0", "refresh-1"], account.RefreshRequests);
+        Assert.Equal(["Bearer access-1", "Bearer access-1", "Bearer access-2", "Bearer access-2"], _responses.Authorizations);
+        Assert.Empty(warnings);
+
+        clock.Now += TimeSpan.FromDays(7);
+        account.RejectRefresh = true;
+        await Run();
+        Assert.Contains("Connect Trakt again", Assert.Single(warnings));
+        Assert.Equal(4, _responses.Requests.Count);
+        await Run();
+        Assert.Equal(["refresh-0", "refresh-1", "refresh-2"], account.RefreshRequests);
+    });
+
+    [Fact]
+    public async Task Moving_a_Trakt_list_between_settings_keeps_one_collection_and_scrubs_the_private_tag()
+        => await SyncWithTraktAccount(async (sync, _, _) =>
+    {
+        _responses.Summary();
+        _responses.Page(ListItems, 1, 50, 1, Movies(1, 1, wrapped: true));
+        var member = LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
+        _responses.ExpectAuthenticatedLists = false;
+        await sync.RunAsync([ListUrl], Assert.Fail, default);
+        var collection = Assert.Single(_library.ManagedCollections);
+        Assert.Contains(ListUrl, collection.Tags);
+
+        _responses.ExpectAuthenticatedLists = true;
+        _responses.Record(ListSummary, () => new(HttpStatusCode.Forbidden));
+        var warnings = new List<string>();
+        await sync.RunAsync([], Assert.Fail, default, privateTraktUrls: [ListUrl], reportPrivateFailure: warnings.Add);
+        Assert.Single(warnings);
+        Assert.Contains(ListUrl, collection.Tags);
+
+        _responses.Summary();
+        await sync.RunAsync([], Assert.Fail, default, privateTraktUrls: [ListUrl], reportPrivateFailure: Assert.Fail);
+        Assert.Equal(collection.Id, Assert.Single(_library.ManagedCollections).Id);
+        Assert.DoesNotContain(ListUrl, collection.Tags);
+        Assert.Equal([member], collection.Members);
+
+        _responses.ExpectAuthenticatedLists = false;
+        await sync.RunAsync([ListUrl], Assert.Fail, default);
+        Assert.Equal(collection.Id, Assert.Single(_library.ManagedCollections).Id);
+        Assert.Contains(ListUrl, collection.Tags);
+    });
+
+    [Fact]
+    public async Task Private_sync_does_not_use_the_connected_token_for_another_owners_list()
+        => await SyncWithTraktAccount(async (sync, _, _) =>
+    {
+        var warnings = new List<string>();
+        await sync.RunAsync([], Assert.Fail, default,
+            privateTraktUrls: ["https://trakt.tv/users/someone-else/lists/example"], reportPrivateFailure: warnings.Add);
+        Assert.Empty(_responses.Requests);
+        Assert.Contains("must belong to the connected Trakt account", Assert.Single(warnings));
+    });
+
+    private async Task SyncWithTraktAccount(Func<CollectionSync, TestClock, TraktTestAccount, Task> run)
+    {
+        var data = Path.Combine(Path.GetTempPath(), $"magic-trakt-{Guid.NewGuid():N}");
+        var configuration = new PluginConfiguration { TraktClientId = "development-id" };
+        using var account = new TraktTestAccount(_responses);
+        using var http = new HttpClient(account, disposeHandler: false);
+        var clock = new TestClock();
+        var connection = new TraktConnection(http, () => configuration, data, clock);
+        try
+        {
+            var admin = new TraktAdminSession(Guid.NewGuid(), "admin");
+            var signIn = await connection.StartAsync(admin, default);
+            var state = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(signIn.AuthorizationUrl).Query)["state"].ToString();
+            await connection.CompleteAsync(admin, new("test-code", state), default);
+            _responses.ExpectAuthenticatedLists = true;
+            await run(new CollectionSync([new TraktHandler(http, () => configuration, connection)], _library), clock, account);
+        }
+        finally
+        {
+            if (Directory.Exists(data)) Directory.Delete(data, recursive: true);
+        }
+    }
+
     private static string TrendingMovies(int first, int count) =>
         JsonSerializer.Serialize(Enumerable.Range(first, count).Select(id => new { watchers = 1, movie = new { ids = new { tmdb = id } } }));
 
@@ -410,6 +536,8 @@ public sealed class TraktCollectionSyncTests : IDisposable
         private readonly Dictionary<string, Func<HttpResponseMessage>> _responses = [];
         public List<string> Requests { get; } = [];
         public List<string> ClientIds { get; } = [];
+        public List<string?> Authorizations { get; } = [];
+        public bool ExpectAuthenticatedLists { get; set; }
 
         public void Summary(string json = """{"name":"Open Your Eyes"}""") => Record(ListSummary, () =>
             new(HttpStatusCode.OK) { Content = new StringContent(json) });
@@ -427,7 +555,9 @@ public sealed class TraktCollectionSyncTests : IDisposable
             Assert.Equal("application/json", request.Content?.Headers.ContentType?.MediaType);
             Assert.NotEmpty(request.Headers.UserAgent);
             Assert.Equal(["2"], request.Headers.GetValues("trakt-api-version"));
-            Assert.False(request.Headers.Contains("Authorization"));
+            Assert.Equal(ExpectAuthenticatedLists && request.RequestUri.AbsolutePath.StartsWith("/users/", StringComparison.Ordinal),
+                request.Headers.Contains("Authorization"));
+            Authorizations.Add(request.Headers.Authorization?.ToString());
             ClientIds.Add(Assert.Single(request.Headers.GetValues("trakt-api-key")));
             var endpoint = request.RequestUri.AbsoluteUri;
             Requests.Add(endpoint);
@@ -435,5 +565,57 @@ public sealed class TraktCollectionSyncTests : IDisposable
                 ? respond()
                 : throw new InvalidOperationException($"No Trakt recording for {endpoint}"));
         }
+    }
+
+    private sealed class TraktTestAccount : HttpMessageHandler
+    {
+        private readonly HttpMessageInvoker _lists;
+        public List<string> RefreshRequests { get; } = [];
+        public bool RejectRefresh { get; set; }
+
+        public TraktTestAccount(HttpMessageHandler lists) =>
+            _lists = new(lists, disposeHandler: false);
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            if (request.RequestUri!.AbsoluteUri == "https://auth.trakt.tv/oauth/token")
+            {
+                using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
+                Assert.False(body.RootElement.TryGetProperty("client_secret", out _));
+                if (body.RootElement.GetProperty("grant_type").GetString() == "refresh_token")
+                {
+                    RefreshRequests.Add(body.RootElement.GetProperty("refresh_token").GetString()!);
+                    Assert.False(body.RootElement.TryGetProperty("code_verifier", out _));
+                }
+                if (RejectRefresh)
+                {
+                    return Reply("""{"error":"invalid_grant"}""", HttpStatusCode.BadRequest);
+                }
+                return Reply(JsonSerializer.Serialize(new
+                {
+                    access_token = $"access-{RefreshRequests.Count}",
+                    refresh_token = $"refresh-{RefreshRequests.Count}",
+                    expires_in = 604800
+                }));
+            }
+            return request.RequestUri.AbsoluteUri == "https://api.trakt.tv/users/settings"
+                ? Reply("""{"user":{"username":"Justin","ids":{"slug":"justin"}}}""")
+                : await _lists.SendAsync(request, token);
+        }
+
+        private static HttpResponseMessage Reply(string json, HttpStatusCode status = HttpStatusCode.OK) =>
+            new(status) { Content = new StringContent(json) };
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _lists.Dispose();
+            base.Dispose(disposing);
+        }
+    }
+
+    private sealed class TestClock : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = DateTimeOffset.UnixEpoch;
+        public override DateTimeOffset GetUtcNow() => Now;
     }
 }

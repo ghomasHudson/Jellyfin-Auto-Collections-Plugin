@@ -4,7 +4,7 @@ namespace MagicCollections.Tests;
 
 internal sealed class ControlledLibrary : ICollectionLibrary
 {
-    public sealed record ManagedCollection(Guid Id, string Name, IReadOnlyList<string> Tags, List<Guid> Members)
+    public sealed record ManagedCollection(Guid Id, string Name, List<string> Tags, List<Guid> Members)
     {
         public string? Overview { get; set; }
         public string? PosterTitle { get; set; }
@@ -30,6 +30,14 @@ internal sealed class ControlledLibrary : ICollectionLibrary
     public Task AddMembersAsync(Guid id, IReadOnlyCollection<Guid> memberIds)
     {
         ManagedCollections.Single(c => c.Id == id).Members.AddRange(memberIds);
+        return Task.CompletedTask;
+    }
+
+    public Task ReplaceTagAsync(Guid id, string oldTag, string newTag, CancellationToken cancellationToken)
+    {
+        var tags = ManagedCollections.Single(c => c.Id == id).Tags;
+        tags.RemoveAll(tag => tag == oldTag || tag == newTag);
+        tags.Add(newTag);
         return Task.CompletedTask;
     }
 

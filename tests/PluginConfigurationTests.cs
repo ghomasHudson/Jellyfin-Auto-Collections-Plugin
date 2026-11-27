@@ -22,6 +22,7 @@ public sealed class PluginConfigurationTests : IDisposable
     public void Saving_settings_persists_clean_Trakt_URLs_separately_from_the_Client_ID_override(string clientId)
     {
         const string publicList = "https://app.trakt.tv/users/justin/lists/open-your-eyes";
+        const string privateList = "https://app.trakt.tv/users/justin/lists/my-list";
         const string unrelated = "https://letterboxd.com/example/list/movies/?sort=rank#list";
         const string filteredChart = "https://app.trakt.tv/discover/trending?mode=show&genres=comedy";
         using var update = JsonDocument.Parse($$"""
@@ -31,6 +32,12 @@ public sealed class PluginConfigurationTests : IDisposable
                 "http://trakt.tv/users/JUSTIN/lists/OPEN-YOUR-EYES/?access_token=query-token#fragment-token",
                 "https://trakt.tv/shows/popular#fragment-token",
                 "{{filteredChart}}"
+              ],
+              "PrivateTraktUrls": [
+                " http://trakt.tv/users/JUSTIN/lists/MY-LIST/?access_token=query-token#fragment-token ",
+                "{{privateList}}",
+                "https://trakt.tv/movies/popular",
+                "{{unrelated}}"
               ],
               "TraktClientId": "{{clientId}}",
               "PosterIcon": false
@@ -43,6 +50,7 @@ public sealed class PluginConfigurationTests : IDisposable
 
         var expectedUrls = new[] { unrelated, publicList, "https://app.trakt.tv/discover/popular?mode=show", filteredChart };
         Assert.Equal(expectedUrls, plugin.Configuration.SourceUrls);
+        Assert.Equal([privateList], plugin.Configuration.PrivateTraktUrls);
         var xml = File.ReadAllText(plugin.ConfigurationFilePath);
         Assert.DoesNotContain("query-token", xml, StringComparison.Ordinal);
         Assert.DoesNotContain("fragment-token", xml, StringComparison.Ordinal);
@@ -50,6 +58,7 @@ public sealed class PluginConfigurationTests : IDisposable
 
         Assert.Equal(clientId, settings.GetProperty("TraktClientId").GetString());
         Assert.Equal(expectedUrls, settings.GetProperty("SourceUrls").Deserialize<string[]>());
+        Assert.Equal([privateList], settings.GetProperty("PrivateTraktUrls").EnumerateArray().Select(url => url.GetString()));
         Assert.False(settings.GetProperty("PosterIcon").GetBoolean());
     }
 
