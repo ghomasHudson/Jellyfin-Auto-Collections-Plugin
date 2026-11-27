@@ -24,11 +24,7 @@ Jellyfin plugin to make and update collections based on internet lists such as I
 
 1. Open **Dashboard → Plugins → Magic Collections**. Paste a [supported list URL](#supported-list-sources) into the blank field. To add more URLs, use the next blank field that appears. Select **Save**.
 2. Open **Dashboard → Scheduled Tasks → Sync Magic Collections**. The default trigger is daily at 03:00 server time. Select **Run now** to run the same task immediately.
-3. If the task fails, check the task result or Jellyfin server log.
-
-For managed collections without a poster, sync generates one with the collection name in white and the source site's favicon above it when available. The background uses a cropped, darkened list image or stays black if sync can't load one. The text uses the server's installed fonts.
-
-Sync leaves existing posters untouched. To refresh a generated poster, delete it and sync again.
+3. If the task fails, check the Jellyfin server log.
 
 ### Supported List Sources
 
