@@ -8,8 +8,10 @@ public interface ICollectionLibrary
 {
     IEnumerable<LibraryMedia> GetMedia();
     TaggedCollection? FindByTags(string urlTag, string markerTag);
+    IEnumerable<(Guid Id, IReadOnlyList<string> Tags)> GetCollectionsWithTag(string tag);
     Task<Guid> CreateAsync(string name, params string[] tags);
     Task AddMembersAsync(Guid id, IReadOnlyCollection<Guid> memberIds);
     Task SetOverviewAsync(Guid id, string overview, CancellationToken cancellationToken);
     Task EnsurePosterAsync(Guid id, IReadOnlyList<Uri> faviconUrls, Uri? listImageUrl, CancellationToken cancellationToken);
+    Task RegeneratePosterAsync(Guid id, IReadOnlyList<Uri> faviconUrls, Uri? listImageUrl, CancellationToken cancellationToken);
 }

@@ -2,7 +2,7 @@ namespace Jellyfin.Plugin.MagicCollections.Sync;
 
 public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICollectionLibrary library)
 {
-    private const string ManagedCollectionTag = "Magic Collection";
+    internal const string ManagedCollectionTag = "Magic Collection";
 
     public async Task RunAsync(IEnumerable<string> urls, Action<string> reportUnsupported, CancellationToken cancellationToken)
     {

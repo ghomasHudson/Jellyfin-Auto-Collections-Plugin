@@ -20,6 +20,9 @@ internal sealed class ControlledLibrary : ICollectionLibrary
         ManagedCollections.SingleOrDefault(c => c.Tags.Contains(urlTag) && c.Tags.Contains(markerTag)) is { } c
             ? new(c.Id, c.Members.ToArray()) : null;
 
+    public IEnumerable<(Guid Id, IReadOnlyList<string> Tags)> GetCollectionsWithTag(string tag) =>
+        ManagedCollections.Where(c => c.Tags.Contains(tag)).Select(c => (c.Id, c.Tags));
+
     public Task<Guid> CreateAsync(string name, params string[] tags)
     {
         var collection = new ManagedCollection(Guid.NewGuid(), name, [.. tags], []);
@@ -42,12 +45,17 @@ internal sealed class ControlledLibrary : ICollectionLibrary
     public Task EnsurePosterAsync(Guid id, IReadOnlyList<Uri> faviconUrls, Uri? listImageUrl, CancellationToken cancellationToken)
     {
         var collection = ManagedCollections.Single(c => c.Id == id);
-        if (collection.PosterTitle is null)
-        {
-            collection.PosterTitle = collection.Name;
-            collection.PosterFaviconUrls = faviconUrls;
-            collection.PosterListImageUrl = listImageUrl;
-        }
+        return collection.PosterTitle is null
+            ? RegeneratePosterAsync(id, faviconUrls, listImageUrl, cancellationToken)
+            : Task.CompletedTask;
+    }
+
+    public Task RegeneratePosterAsync(Guid id, IReadOnlyList<Uri> faviconUrls, Uri? listImageUrl, CancellationToken cancellationToken)
+    {
+        var collection = ManagedCollections.Single(c => c.Id == id);
+        collection.PosterTitle = collection.Name;
+        collection.PosterFaviconUrls = faviconUrls;
+        collection.PosterListImageUrl = listImageUrl;
 
         return Task.CompletedTask;
     }
