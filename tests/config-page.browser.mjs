@@ -38,7 +38,7 @@ async function testPage() {
     const uncheckable = 'https://letterboxd.com/example/list/check-fails/';
     const delayed = 'https://example.com/delayed';
     const checked = [];
-    let saved = [unsupported];
+    let saved = { SourceUrls: [unsupported], PosterBackgroundImage: true, PosterIcon: true, PosterListName: true };
     let saveCount = 0;
     let pendingCheck;
     window.Dashboard = {
@@ -47,9 +47,9 @@ async function testPage() {
         processPluginConfigurationUpdateResult() {}
     };
     window.ApiClient = {
-        async getPluginConfiguration() { return { SourceUrls: saved }; },
+        async getPluginConfiguration() { return { ...saved }; },
         async updatePluginConfiguration(_, config) {
-            saved = config.SourceUrls;
+            saved = config;
             saveCount++;
         },
         getUrl(path) { return path; },
@@ -84,18 +84,22 @@ async function testPage() {
     try {
         const form = document.querySelector('form');
         const save = form.querySelector('button[type="submit"]');
+        const posterOptions = [...form.querySelectorAll('input[type="checkbox"]')];
         const field = (index = 1) => form.querySelector('input[aria-label="Source list URL ' + index + '"]');
         const invalid = (index = 1) => field(index)?.getAttribute('aria-invalid') === 'true';
         const borderColor = (index = 1) => getComputedStyle(field(index)).borderTopColor;
         const red = 'rgb(229, 57, 53)';
         await until(() => field(), 'The configuration did not load.');
+        if (posterOptions.length !== 3 || posterOptions.some(option => !option.checked)) {
+            throw new Error('All three poster options should start checked.');
+        }
         await wait(500);
         if (field().value !== unsupported || checked.length || invalid() || borderColor() === red) {
             throw new Error('Loading a saved URL should not trigger a check or mark it invalid.');
         }
         enter(field(2), '   ');
         await wait(500);
-        if (checked.length || form.querySelectorAll('input').length !== 2) {
+        if (checked.length || document.querySelectorAll('#magicCollectionsUrls input').length !== 2) {
             throw new Error('A whitespace-only edit should not trigger a check or add an input.');
         }
         field().focus({ preventScroll: true });
@@ -128,8 +132,12 @@ async function testPage() {
         await until(() => invalid() && borderColor() === red, 'No red border after editing the URL.');
         field().blur();
         if (borderColor() !== red) throw new Error('The invalid border color should remain when the input loses focus.');
+        form.elements.PosterIcon.click();
         save.click();
-        await until(() => saveCount === 1 && saved.length === 1 && saved[0] === unsupported, 'Save did not keep the unsupported URL.');
+        await until(() => saveCount === 1 && saved.SourceUrls.length === 1 && saved.SourceUrls[0] === unsupported, 'Save did not keep the unsupported URL.');
+        if (saved.PosterIcon !== false || saved.PosterBackgroundImage !== true || saved.PosterListName !== true) {
+            throw new Error('Save did not keep the selected poster options.');
+        }
         const checksAtSave = checked.length;
         await wait(500);
         if (checked.length !== checksAtSave) throw new Error('Saving should not trigger a check.');
@@ -138,7 +146,7 @@ async function testPage() {
         if (invalid() || borderColor() === red) throw new Error('A failed check should not mark the URL invalid.');
         verifySaveStayedPut('when the check failed');
         save.click();
-        await until(() => saveCount === 2 && saved.length === 1 && saved[0] === uncheckable, 'Save did not keep the URL after a failed check.');
+        await until(() => saveCount === 2 && saved.SourceUrls.length === 1 && saved.SourceUrls[0] === uncheckable, 'Save did not keep the URL after a failed check.');
 
         for (const finishCheck of [
             check => check.resolve(false),
@@ -158,7 +166,7 @@ async function testPage() {
         enter(field(), delayed);
         await until(() => pendingCheck, 'The check did not start before saving.');
         save.click();
-        await until(() => saveCount === 3 && saved.length === 1 && saved[0] === delayed, 'An in-flight check blocked Save.');
+        await until(() => saveCount === 3 && saved.SourceUrls.length === 1 && saved.SourceUrls[0] === delayed, 'An in-flight check blocked Save.');
         pendingCheck.resolve(false);
         await wait(0);
         if (invalid() || borderColor() === red) throw new Error('An in-flight check changed the border on a newly rendered row.');
@@ -171,6 +179,9 @@ async function testPage() {
         if (invalid(2) || borderColor(2) === red) throw new Error('Clearing the URL should reset its border.');
         field(2).dispatchEvent(new Event('blur'));
         if (field(2)?.value !== '' || field(3)) throw new Error('Clearing an input and leaving it should remove the row.');
+        form.elements.PosterIcon.click();
+        document.querySelector('#magicCollectionsPage').dispatchEvent(new Event('pageshow'));
+        await until(() => !form.elements.PosterIcon.checked, 'Reloading settings did not restore the unchecked icon option.');
         result.textContent = 'PASS';
     } catch (error) {
         result.textContent = error.message;
