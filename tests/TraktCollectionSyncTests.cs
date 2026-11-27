@@ -142,7 +142,7 @@ public sealed class TraktCollectionSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task A_rate_limit_on_a_later_page_reports_when_to_retry_without_publishing_partial_data()
+    public async Task A_rate_limit_on_a_later_page_reports_when_to_retry_and_leaves_the_managed_collection_unchanged()
     {
         _configuration.TraktClientId = "override-credential";
         _responses.Summary("""{"name":"Open Your Eyes","description":"New notes"}""");
@@ -231,26 +231,16 @@ public sealed class TraktCollectionSyncTests : IDisposable
 
     [Theory]
     [InlineData("""[{"type":"movie","movie":{"ids":{"tmdb":2}}}]""", null)]
-    [InlineData("""[{"type":"movie","movie":{"ids":{"tmdb":2}}}]""", "1")]
-    [InlineData("""[{"type":"movie","movie":{"ids":{"tmdb":"not-an-id"}}}]""", "2")]
-    [InlineData("""[{"type":"show","movie":{"ids":{"tmdb":2}}}]""", "2")]
-    [InlineData("""[{"type":""", "2")]
-    public async Task A_malformed_later_page_fails_the_whole_read_instead_of_creating_a_partial_collection(string body, string? reportedPage)
+    [InlineData("""[{"type":"movie","movie":{"ids":{"tmdb":2}}}]""", 1)]
+    [InlineData("""[{"type":"movie","movie":{"ids":{"tmdb":"not-an-id"}}}]""", 2)]
+    [InlineData("""[{"type":"show","movie":{"ids":{"tmdb":2}}}]""", 2)]
+    [InlineData("""[{"type":""", 2)]
+    public async Task A_malformed_later_page_fails_the_whole_read_without_creating_a_managed_collection(string body, int? reportedPage)
     {
         _responses.Summary();
         _responses.Page(ListItems, page: 1, limit: 1, itemCount: 2, Movies(1, 1, wrapped: true));
         _responses.Record(ListItems + "?page=2&limit=50", () =>
-        {
-            var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) };
-            if (reportedPage is not null)
-            {
-                response.Headers.Add("X-Pagination-Page", reportedPage);
-            }
-            response.Headers.Add("X-Pagination-Limit", "1");
-            response.Headers.Add("X-Pagination-Page-Count", "2");
-            response.Headers.Add("X-Pagination-Item-Count", "2");
-            return response;
-        });
+            PaginatedResponse(reportedPage, limit: 1, itemCount: 2, body));
         LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
 
         var error = await Assert.ThrowsAsync<SourceListReadException>(() => SyncAsync(ListUrl));
@@ -366,7 +356,7 @@ public sealed class TraktCollectionSyncTests : IDisposable
     [Theory]
     [InlineData(40, 40)] // Changing the effective limit shifts the page offset.
     [InlineData(50, 49)] // Even with a stable limit, a truncated page is invalid.
-    public async Task Rejects_invalid_later_chart_pages_without_publishing_a_partial_collection(int limit, int rows)
+    public async Task Rejects_invalid_later_chart_pages_without_creating_a_managed_collection(int limit, int rows)
     {
         const string endpoint = "https://api.trakt.tv/movies/trending";
         _responses.Page(endpoint, page: 1, limit: 50, itemCount: 189, TrendingMovies(1, 50));
@@ -402,6 +392,19 @@ public sealed class TraktCollectionSyncTests : IDisposable
         return itemId;
     }
 
+    private static HttpResponseMessage PaginatedResponse(int? reportedPage, int limit, int itemCount, string json)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) };
+        if (reportedPage is { } page)
+        {
+            response.Headers.Add("X-Pagination-Page", page.ToString(CultureInfo.InvariantCulture));
+        }
+        response.Headers.Add("X-Pagination-Limit", limit.ToString(CultureInfo.InvariantCulture));
+        response.Headers.Add("X-Pagination-Page-Count", ((itemCount + limit - 1) / limit).ToString(CultureInfo.InvariantCulture));
+        response.Headers.Add("X-Pagination-Item-Count", itemCount.ToString(CultureInfo.InvariantCulture));
+        return response;
+    }
+
     private sealed class TraktResponses : HttpMessageHandler
     {
         private readonly Dictionary<string, Func<HttpResponseMessage>> _responses = [];
@@ -412,15 +415,7 @@ public sealed class TraktCollectionSyncTests : IDisposable
             new(HttpStatusCode.OK) { Content = new StringContent(json) });
 
         public void Page(string path, int page, int limit, int itemCount, string json) =>
-            Record($"{path}?page={page}&limit=50", () =>
-            {
-                var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) };
-                response.Headers.Add("X-Pagination-Page", page.ToString(CultureInfo.InvariantCulture));
-                response.Headers.Add("X-Pagination-Limit", limit.ToString(CultureInfo.InvariantCulture));
-                response.Headers.Add("X-Pagination-Page-Count", ((itemCount + limit - 1) / limit).ToString(CultureInfo.InvariantCulture));
-                response.Headers.Add("X-Pagination-Item-Count", itemCount.ToString(CultureInfo.InvariantCulture));
-                return response;
-            });
+            Record($"{path}?page={page}&limit=50", () => PaginatedResponse(page, limit, itemCount, json));
 
         public void Record(string url, Func<HttpResponseMessage> response) => _responses[url] = response;
 

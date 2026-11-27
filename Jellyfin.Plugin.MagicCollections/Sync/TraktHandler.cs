@@ -89,7 +89,7 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
         var items = new List<MediaIdentity>();
         var chart = source.Chart;
         var path = chart is null ? source.ApiPath + "/items/movie,show,season,episode" : source.ApiPath;
-        Pagination? firstPage = null;
+        Pagination? firstPagePagination = null;
         var chartEntriesRemaining = ChartEntryCap;
         for (var page = 1; ; page++)
         {
@@ -105,12 +105,12 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
             var pagination = ReadPagination(response, page, root.GetArrayLength());
             // Live charts can grow or shrink between requests, but the page size must
             // stay fixed so page offsets (and the rank cap) remain meaningful.
-            if (firstPage is { } initial &&
+            if (firstPagePagination is { } initial &&
                 (pagination.Limit != initial.Limit || (chart is null && pagination != initial)))
             {
                 throw new JsonException("Trakt pagination changed between pages.");
             }
-            firstPage ??= pagination;
+            firstPagePagination ??= pagination;
 
             foreach (var row in root.EnumerateArray())
             {
@@ -217,13 +217,16 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
             throw new JsonException("Expected a Trakt entry with a type.");
         }
 
-        return type.GetString() switch
-        {
-            "movie" => ReadMedia(Unwrap(row, "movie"), SourceMediaType.Movie),
-            "show" => ReadMedia(Unwrap(row, "show"), SourceMediaType.Series),
-            _ => null
-        };
+        var mediaKey = type.GetString()!;
+        return GetMediaType(mediaKey) is { } media ? ReadMedia(Unwrap(row, mediaKey), media) : null;
     }
+
+    private static SourceMediaType? GetMediaType(string mediaKey) => mediaKey switch
+    {
+        "movie" => SourceMediaType.Movie,
+        "show" => SourceMediaType.Series,
+        _ => null
+    };
 
     private static JsonElement Unwrap(JsonElement row, string field) =>
         row.ValueKind == JsonValueKind.Object && row.TryGetProperty(field, out var item)
@@ -298,12 +301,11 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
             ("app.trakt.tv", ["", "discover", var chart], "?mode=show") => (chart, "show"),
             _ => (null, null)
         };
-        if (kind is not ("popular" or "trending") || mode is null)
+        if (kind is not ("popular" or "trending") || mode is null || GetMediaType(mode) is not { } media)
         {
             return null;
         }
 
-        var media = mode == "movie" ? SourceMediaType.Movie : SourceMediaType.Series;
         var trending = kind == "trending";
         var name = (trending ? "Trending " : "Popular ") + (media == SourceMediaType.Movie ? "Movies" : "Shows");
         return new($"/{mode}s/{kind}", new($"https://app.trakt.tv/discover/{kind}?mode={mode}"),
