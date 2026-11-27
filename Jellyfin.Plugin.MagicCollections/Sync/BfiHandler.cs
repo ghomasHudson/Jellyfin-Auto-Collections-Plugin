@@ -13,7 +13,8 @@ public sealed class BfiHandler(HttpClient http) : ISourceListHandler
     private const string ArticleMain = "main > article > div[class*='ArticlePageTemplate__ArticleMain-']";
     private const string TextBlock = "div[class*='EmbeddedArticleText__TextContent-']";
     private static readonly Regex ListPath = new(@"\A/lists/[a-z0-9]+(?:-[a-z0-9]+)*/?\z", RegexOptions.NonBacktracking);
-    private static readonly Regex Caption = new(@"\A(.+) \(([0-9]{4})\)\z", RegexOptions.NonBacktracking);
+    private static readonly Regex TitleThenYear = new(@"\A(.+) \(([0-9]{4})\)\z", RegexOptions.NonBacktracking);
+    private static readonly Regex YearThenTitle = new(@"\A([0-9]{4}): (.+)\z", RegexOptions.NonBacktracking);
 
     public bool Supports(Uri url) => url.IsAbsoluteUri && url.OriginalString == Origin + url.AbsolutePath &&
         ListPath.IsMatch(url.AbsolutePath);
@@ -59,48 +60,77 @@ public sealed class BfiHandler(HttpClient http) : ISourceListHandler
 
         using var page = await new HtmlParser().ParseDocumentAsync(html, cancellationToken).ConfigureAwait(false);
         var article = page.QuerySelector(ArticleMain);
-        var movies = article is null ? [] : ReadMovies(article);
-        if (movies.Count == 0)
+        if (article is null || ReadMovies(article) is not { } movies)
         {
-            throw new SourceListReadException(url, "Expected film sections in the BFI article.");
+            throw new SourceListReadException(url, "Expected captioned film sections in the BFI article.");
         }
 
-        var name = ReadHeadline(page) ?? article?.QuerySelector(":scope > header h1")?.TextContent.Trim();
+        var name = ReadHeadline(page) ?? article.QuerySelector(":scope > header h1")?.TextContent.Trim();
         return new(name, []) { MoviesByTitleYear = movies };
     }
 
-    private static List<MovieTitleYear> ReadMovies(IElement article)
+    private static List<MovieTitleYear>? ReadMovies(IElement article)
     {
         var movies = new List<MovieTitleYear>();
-        var heading = string.Empty;
+        var filmHeadings = 0;
+        var captionedHeadings = 0;
+        Match heading = Match.Empty;
+        var hasMatchingCaption = false;
         // Sections can span adjacent text blocks. Don't scan the hero, footer or related articles.
         foreach (var element in article.Children.Where(block => block.Matches(TextBlock)).SelectMany(block => block.Children))
         {
             if (element.LocalName == "h2")
             {
-                heading = MovieTitleYear.NormalizeTitle(element.TextContent);
+                hasMatchingCaption = false;
+                var title = MovieTitleYear.NormalizeTitle(element.TextContent);
+                var yearFirst = YearThenTitle.Match(title);
+                heading = TitleThenYear.Match(yearFirst.Success
+                    ? $"{yearFirst.Groups[2].Value} ({yearFirst.Groups[1].Value})"
+                    : title);
+                if (heading.Success)
+                {
+                    filmHeadings++;
+                }
+                continue;
+            }
+
+            if (!heading.Success)
+            {
                 continue;
             }
 
             foreach (var caption in element.QuerySelectorAll("figure figcaption"))
             {
-                var text = MovieTitleYear.NormalizeTitle(caption.TextContent);
-                var match = Caption.Match(text);
-                if (!match.Success || (!heading.Equals(text, StringComparison.OrdinalIgnoreCase) &&
-                    !heading.EndsWith(" in " + text, StringComparison.OrdinalIgnoreCase)))
+                // Image credits are separate from the caption, even when rendered inline.
+                var text = MovieTitleYear.NormalizeTitle(string.Concat(caption.ChildNodes
+                    .Where(node => node is not IElement { LocalName: "small" }).Select(node => node.TextContent)));
+                var match = TitleThenYear.Match(text);
+                var title = match.Success ? match.Groups[1].Value : text;
+                var headingTitle = heading.Groups[1].Value;
+                if (title.Length == 0 || (!headingTitle.Equals(title, StringComparison.OrdinalIgnoreCase) &&
+                    !headingTitle.EndsWith(" in " + title, StringComparison.OrdinalIgnoreCase)))
                 {
                     continue;
                 }
 
-                var year = int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture);
-                if (year > 0)
+                if (!hasMatchingCaption)
                 {
-                    movies.Add(new(match.Groups[1].Value, year));
-                    heading = string.Empty;
+                    captionedHeadings++;
+                    hasMatchingCaption = true;
+                }
+                if (match.Success && match.Groups[2].Value == heading.Groups[2].Value &&
+                    int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture) is > 0 and var year)
+                {
+                    movies.Add(new(title, year));
+                    heading = Match.Empty;
+                    break;
                 }
             }
         }
-        return movies;
+
+        // A stray still in a shot survey is not a list. The caption-backed format should
+        // account for most dated headings, though individual film captions can be unusable.
+        return captionedHeadings > filmHeadings / 2 ? movies : null;
     }
 
     private static string? ReadHeadline(IDocument page)

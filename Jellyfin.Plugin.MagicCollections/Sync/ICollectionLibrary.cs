@@ -1,6 +1,6 @@
 namespace Jellyfin.Plugin.MagicCollections.Sync;
 
-public sealed record LibraryMedia(Guid Id, MediaIdentity Identity, string? Title = null, int? Year = null);
+public sealed record LibraryMedia(Guid Id, MediaIdentity Identity, MovieTitleYear? MovieTitleYear = null);
 
 public sealed record TaggedCollection(Guid Id, IReadOnlyCollection<Guid> MemberIds);
 

@@ -11,8 +11,8 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
                 .ToLookup(pair => pair.key, pair => pair.Id));
         var moviesByTitleYear = new Lazy<ILookup<MovieTitleYear, Guid>>(() =>
             media.Value.Where(item => item.Identity.Type == SourceMediaType.Movie &&
-                    !string.IsNullOrWhiteSpace(item.Title) && item.Year is > 0)
-                .ToLookup(item => new MovieTitleYear(item.Title!, item.Year!.Value).MatchKey(), item => item.Id));
+                    item.MovieTitleYear is { IsComplete: true })
+                .ToLookup(item => item.MovieTitleYear!.Value.MatchKey(), item => item.Id));
         var syncedSources = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var url in urls)
@@ -32,9 +32,9 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             }
 
             var list = await handler.ReadAsync(source, cancellationToken).ConfigureAwait(false);
-            var matches = list.Items.SelectMany(Keys)
+            var matches = list.ProviderItems.SelectMany(Keys)
                 .SelectMany(key => mediaByProvider.Value[key]).ToHashSet();
-            foreach (var movie in list.MoviesByTitleYear)
+            foreach (var movie in list.MoviesByTitleYear.Where(movie => movie.IsComplete))
             {
                 var candidates = moviesByTitleYear.Value[movie.MatchKey()].Distinct().Take(2).ToArray();
                 if (candidates.Length == 1)

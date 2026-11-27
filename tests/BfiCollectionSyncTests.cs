@@ -65,6 +65,47 @@ public sealed class BfiCollectionSyncTests : IDisposable
         Assert.Empty(_library.ManagedCollections);
     }
 
+    [Fact]
+    public async Task Reads_a_year_first_heading_and_ignores_the_credit_in_its_caption()
+    {
+        RecordArticle(Article()
+            .Replace("The Director’s Cut (1997)</h2>", "1997: The Director’s Cut</h2>", StringComparison.Ordinal)
+            .Replace(" (1997)</figcaption>", " (1997)<small>Photo credit</small></figcaption>", StringComparison.Ordinal));
+        var movie = AddMedia(Title, 1997);
+
+        await SyncAsync();
+
+        Assert.Equal([movie], Assert.Single(_library.ManagedCollections).Members);
+    }
+
+    [Fact]
+    public async Task A_recognizable_list_with_no_usable_dated_captions_returns_valid_empty_data()
+    {
+        RecordArticle(Article().Replace(" (1997)</figcaption>", "</figcaption>", StringComparison.Ordinal));
+        AddMedia(Title, 1997);
+
+        await SyncAsync();
+
+        Assert.Empty(_library.ManagedCollections);
+    }
+
+    [Fact]
+    public async Task A_shot_survey_with_one_confirming_still_is_not_read_as_a_film_list()
+    {
+        RecordArticle(Article().Replace("<footer>", """
+            <div class="EmbeddedArticleText__TextContent-test">
+              <h2>Untitled Short (2003)</h2><figure><video></video></figure>
+              <h2>Another Short (2007)</h2><figure><video></video></figure>
+            </div>
+            <footer>
+            """, StringComparison.Ordinal));
+        AddMedia(Title, 1997);
+
+        await Assert.ThrowsAsync<SourceListReadException>(() => SyncAsync());
+
+        Assert.Empty(_library.ManagedCollections);
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.OK)]
     [InlineData(HttpStatusCode.ServiceUnavailable)]
@@ -121,7 +162,7 @@ public sealed class BfiCollectionSyncTests : IDisposable
     private Guid AddMedia(string title, int? year, SourceMediaType type = SourceMediaType.Movie)
     {
         var key = Guid.NewGuid();
-        _library.Media.Add(new(key, new(type, new Dictionary<string, string>()), title, year));
+        _library.Media.Add(new(key, new(type, new Dictionary<string, string>()), year is int releaseYear ? new(title, releaseYear) : null));
         return key;
     }
 }

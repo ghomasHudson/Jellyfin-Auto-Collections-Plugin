@@ -2,8 +2,10 @@ using System.Text;
 
 namespace Jellyfin.Plugin.MagicCollections.Sync;
 
-internal readonly record struct MovieTitleYear(string Title, int Year)
+public readonly record struct MovieTitleYear(string Title, int Year)
 {
+    internal bool IsComplete => Year > 0 && !string.IsNullOrWhiteSpace(Title);
+
     internal MovieTitleYear MatchKey() => new(NormalizeTitle(Title).ToUpperInvariant(), Year);
 
     internal static string NormalizeTitle(string title) =>

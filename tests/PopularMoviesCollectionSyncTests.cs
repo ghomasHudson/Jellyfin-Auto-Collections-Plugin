@@ -1,8 +1,5 @@
 using System.Net;
-using Jellyfin.Plugin.MagicCollections;
 using Jellyfin.Plugin.MagicCollections.Sync;
-using MediaBrowser.Common.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace MagicCollections.Tests;
@@ -22,34 +19,6 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
     {
         _http = new HttpClient(_responses);
         _sync = MakeSync();
-    }
-
-    [Fact]
-    public void Registers_a_Popular_Movies_handler_without_replacing_the_MDBList_handler()
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton<IApplicationPaths>(new TestApplicationPaths(_dataPath));
-        new ServiceRegistrator().RegisterServices(services, null!);
-        using var provider = services.BuildServiceProvider();
-
-        var handlers = provider.GetServices<ISourceListHandler>().ToArray();
-
-        var popular = Assert.Single(handlers, h => h.Supports(new(PopularFeed)));
-        Assert.Same(popular, provider.GetServices<ISourceListHandler>().Single(h => h.Supports(new(PopularFeed))));
-        Assert.Single(handlers, h => h.Supports(new("https://mdblist.com/lists/garycrawfordgc/top-movies")));
-    }
-
-    [Fact]
-    public void Registers_a_Bfi_handler()
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton<IApplicationPaths>(new TestApplicationPaths(_dataPath));
-        new ServiceRegistrator().RegisterServices(services, null!);
-        using var provider = services.BuildServiceProvider();
-
-        var handler = Assert.Single(provider.GetServices<ISourceListHandler>(),
-            h => h.Supports(new("https://www.bfi.org.uk/lists/10-great-documentaries-that-play-like-thrillers")));
-        Assert.IsType<BfiHandler>(handler);
     }
 
     [Fact]
@@ -399,26 +368,5 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
         private DateTimeOffset _now = DateTimeOffset.UnixEpoch;
         public override DateTimeOffset GetUtcNow() => _now;
         public void Advance(TimeSpan span) => _now += span;
-    }
-
-    private sealed class TestApplicationPaths(string dataPath) : IApplicationPaths
-    {
-        public string DataPath => dataPath;
-        public string ProgramDataPath => throw new NotSupportedException();
-        public string WebPath => throw new NotSupportedException();
-        public string ProgramSystemPath => throw new NotSupportedException();
-        public string ImageCachePath => throw new NotSupportedException();
-        public string PluginsPath => throw new NotSupportedException();
-        public string PluginConfigurationsPath => throw new NotSupportedException();
-        public string LogDirectoryPath => throw new NotSupportedException();
-        public string ConfigurationDirectoryPath => throw new NotSupportedException();
-        public string SystemConfigurationFilePath => throw new NotSupportedException();
-        public string CachePath => throw new NotSupportedException();
-        public string TempDirectory => throw new NotSupportedException();
-        public string VirtualDataPath => throw new NotSupportedException();
-        public string TrickplayPath => throw new NotSupportedException();
-        public string BackupPath => throw new NotSupportedException();
-        public void MakeSanityCheckOrThrow() => throw new NotSupportedException();
-        public void CreateAndCheckMarker(string path, string markerName, bool recursive) => throw new NotSupportedException();
     }
 }

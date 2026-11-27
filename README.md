@@ -67,7 +67,7 @@ To refresh cached Letterboxd film IDs, run **Dashboard → Scheduled Tasks → C
 
 ### BFI film lists
 
-Use an editorial film list URL in the form `https://www.bfi.org.uk/lists/<slug>`, without a query string or fragment. The plugin reads titles and years from film captions that agree with their section headings. The lists index, news articles, and articles without this structure are not supported.
+Use an editorial film list URL in the form `https://www.bfi.org.uk/lists/<slug>`, without a query string or fragment. The plugin reads titles and years from film captions that agree with their section headings. The lists index, news articles, and articles that mostly use other formats, such as video clip surveys, are not supported.
 
 BFI lists are the exception to provider-ID matching. The plugin adds a film only when exactly one movie in Jellyfin has the same title and release year. It ignores case, extra spaces, and straight versus curly apostrophes. A missing year, different edition title, or multiple matches means the movie is skipped. No external metadata lookup is needed.
 
@@ -169,9 +169,11 @@ After editing the plugin, rerun `docker compose up --build -d` to install the re
 - Run `docker compose down` to stop Jellyfin and keep your settings.
 - Run `docker compose down -v` to stop Jellyfin and delete the sandbox's configuration and cache.
 
-## Add a new Site
+## Add a new site
 
-Implement `ISourceListHandler` to recognize a site's URLs and return a `SourceList` with an optional name, optional plain-text description, and entries containing a media type and provider IDs. Register the implementation for `ISourceListHandler` in `ServiceRegistrator`. The handler only reads the source list.
+Implement `ISourceListHandler` to recognize a site's URLs and read its source lists. Register the handler in `ServiceRegistrator`. Handlers do not query the Jellyfin library or write collections.
+
+Return a `SourceList` with the list name and plain-text description when available. Put entries with a media type and provider IDs in `ProviderItems`. British Film Institute (BFI) lists are the only exception: put movie titles and release years in `MoviesByTitleYear` and leave `ProviderItems` empty.
 
 `CollectionSync` matches movies and series by media type and at least one shared provider name and ID. BFI lists explicitly use the separate movie title-and-year match described above. Sync finds existing collections by their `AutoCollections:<absolute source URL>` tags and adds only missing members.
 
