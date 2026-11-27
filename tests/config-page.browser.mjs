@@ -152,7 +152,14 @@ async function testPage() {
         if (visiblePosterOptions() !== 0) throw new Error('Collapsing Poster should hide the options again.');
         debugToggle.click();
         if (!verboseLogging.checkVisibility()) throw new Error('Expanding Debug should show verbose logging.');
-        verboseLogging.click();
+        const debugLabel = verboseLogging.labels[0];
+        if (debugToggle.parentElement.textContent.trim().replace(/\s+/g, ' ') !== 'Debug Enable verbose logging' ||
+                !debugLabel?.checkVisibility()) {
+            throw new Error('Debug should show a visible checkbox label without explanatory text.');
+        }
+        const debugGap = debugLabel.getBoundingClientRect().top - debugToggle.getBoundingClientRect().bottom;
+        if (debugGap < 8) throw new Error('The Debug checkbox needs space below the section heading.');
+        debugLabel.click();
         debugToggle.click();
         if (verboseLogging.checkVisibility()) throw new Error('Collapsing Debug should hide verbose logging again.');
         save.click();

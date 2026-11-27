@@ -20,6 +20,9 @@
                 cursor: pointer;
                 font-weight: bold;
             }
+            #magicCollectionsDebug > .checkboxContainer {
+                padding-block: .6em;
+            }
         </style>
         <div data-role="content">
             <div class="content-primary">
@@ -41,10 +44,10 @@
                             <label><input is="emby-checkbox" type="checkbox" name="PosterListName" checked /><span>List name</span></label>
                         </div>
                     </details>
-                    <details class="settingsSection">
+                    <details id="magicCollectionsDebug" class="settingsSection">
                         <summary>Debug</summary>
                         <div class="checkboxContainer">
-                            <label><input is="emby-checkbox" type="checkbox" name="VerboseLogging" aria-label="Enable verbose logging" /><span></span></label>
+                            <label><input is="emby-checkbox" type="checkbox" name="VerboseLogging" /><span>Enable verbose logging</span></label>
                         </div>
                     </details>
                     <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
