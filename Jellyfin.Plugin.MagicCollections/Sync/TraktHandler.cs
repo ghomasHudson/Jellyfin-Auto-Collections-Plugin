@@ -8,6 +8,7 @@ namespace Jellyfin.Plugin.MagicCollections.Sync;
 public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> configuration) : ISourceListHandler
 {
     private static readonly Uri ApiOrigin = new("https://api.trakt.tv");
+    private static readonly Uri TraktFavicon = new("https://app.trakt.tv/pwa/android/icon_192.png");
     private static readonly string UserAgent = $"MagicCollections/{typeof(TraktHandler).Assembly.GetName().Version?.ToString(3) ?? "1.0"}";
     private const string BundledClientId = "ciP9eCYn_QzrN3q_7LABgpl6B-wi5UIdOgvZz3Jg1Fc";
     private const int PageSize = 50;
@@ -43,7 +44,7 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
                 ? (chart.Name, null)
                 : await ReadSummaryAsync(source, clientId, cancellationToken).ConfigureAwait(false);
             var items = await ReadPagesAsync(source, clientId, cancellationToken).ConfigureAwait(false);
-            return new(name, items, description);
+            return new(name, items, description) { FaviconUrls = [TraktFavicon] };
         }
         catch (JsonException)
         {

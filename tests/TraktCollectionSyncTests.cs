@@ -57,6 +57,7 @@ public sealed class TraktCollectionSyncTests : IDisposable
         Assert.Contains(movieByTmdb, collection.Members);
         Assert.Contains(movieByImdb, collection.Members);
         Assert.Contains(showByTvdb, collection.Members);
+        Assert.Equal(new Uri("https://app.trakt.tv/pwa/android/icon_192.png"), Assert.Single(collection.PosterFaviconUrls));
         Assert.Equal([ListSummary, ListItems + "?page=1&limit=50"], _responses.Requests);
     }
 
@@ -301,7 +302,7 @@ public sealed class TraktCollectionSyncTests : IDisposable
     [InlineData("shows", "popular", "show", "Popular Shows", SourceMediaType.Series, """[{"ids":{"tmdb":101}}]""")]
     [InlineData("movies", "trending", "movie", "Trending Movies", SourceMediaType.Movie, """[{"watchers":30,"movie":{"ids":{"tmdb":101}}}]""")]
     [InlineData("shows", "trending", "show", "Trending Shows", SourceMediaType.Series, """[{"watchers":30,"show":{"ids":{"tmdb":101}}}]""")]
-    public async Task Reads_legacy_and_shareable_links_as_the_same_public_chart(
+    public async Task Uses_one_managed_collection_for_legacy_and_shareable_links_to_a_public_chart(
         string media, string chart, string mode, string name, SourceMediaType type, string body)
     {
         var legacy = $"https://trakt.tv/{media}/{chart}";
@@ -317,6 +318,7 @@ public sealed class TraktCollectionSyncTests : IDisposable
         Assert.Equal(name, collection.Name);
         Assert.Equal(["Magic Collection", shareable, "Trakt"], collection.Tags);
         Assert.Equal([member], collection.Members);
+        Assert.Equal(new Uri("https://app.trakt.tv/pwa/android/icon_192.png"), Assert.Single(collection.PosterFaviconUrls));
         Assert.Equal([endpoint + "?page=1&limit=50"], _responses.Requests);
     }
 
