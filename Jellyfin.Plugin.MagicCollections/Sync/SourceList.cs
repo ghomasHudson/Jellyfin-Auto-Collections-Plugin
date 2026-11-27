@@ -9,6 +9,7 @@ public sealed record SourceList(string? Name, IReadOnlyList<MediaIdentity> Provi
     // Reserved for BFI editorial lists, which don't publish provider IDs.
     public IReadOnlyList<MovieTitleYear> MoviesByTitleYear { get; init; } = [];
     public IReadOnlyList<Uri> FaviconUrls { get; init; } = [];
+    public Uri? ImageUrl { get; init; }
 }
 
 public interface ISourceListHandler

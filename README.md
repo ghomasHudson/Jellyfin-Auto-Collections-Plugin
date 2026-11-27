@@ -26,7 +26,9 @@ Jellyfin plugin to make and update collections based on internet lists such as I
 2. Open **Dashboard → Scheduled Tasks → Sync Magic Collections**. The default trigger is daily at 03:00 server time. Select **Run now** to run the same task immediately.
 3. If the task fails, check the task result or Jellyfin server log.
 
-Sync gives managed collections without a poster a black poster with the source site's favicon above the collection name in white. If the icon can't be loaded, the poster shows just the name. The text uses the server's installed fonts. Sync leaves existing posters untouched. To refresh a generated poster with the favicon or a new name, delete it and sync again.
+For managed collections without a poster, sync generates one with the collection name in white and the source site's favicon above it when available. The background uses a cropped, darkened list image or stays black if sync can't load one. The text uses the server's installed fonts.
+
+Sync leaves existing posters untouched. To refresh a generated poster, delete it and sync again.
 
 ### Supported List Sources
 
@@ -126,7 +128,7 @@ The container adds a **Magic Collections Test Movies** library for `/test-media`
 1. Choose a public MDBList containing one of the test movies and check that the scanned item has a matching provider ID.
 2. Open **Dashboard → Plugins → Magic Collections**. Save the full list page URL and reopen the page to confirm it was saved.
 3. Open **Dashboard → Scheduled Tasks → Sync Magic Collections**. Check that it has a daily trigger, then select **Run now**.
-4. Open **Collections** in Jellyfin. Check for the matching item and a black poster with the MDBList favicon above the collection name.
+4. Open **Collections** in Jellyfin. Check for the matching item and a poster with the MDBList favicon above the collection name. The background uses the darkened list image if available.
 5. Set a custom poster for the collection. Run the task again and confirm it keeps your poster.
 
 After editing the plugin, rerun `docker compose up --build -d` to install the rebuilt plugin.
@@ -138,7 +140,9 @@ After editing the plugin, rerun `docker compose up --build -d` to install the re
 
 Implement `ISourceListHandler` to recognize a site's URLs and read its source lists. Register the handler in `ServiceRegistrator`. Handlers do not query the Jellyfin library or write collections.
 
-Return a `SourceList` with the list name, plain-text description, and favicon URLs when available. Use only HTTPS favicon URLs on the source site or its known asset host. Put entries with a media type and provider IDs in `ProviderItems`. British Film Institute (BFI) lists are the only exception: put movie titles and release years in `MoviesByTitleYear` and leave `ProviderItems` empty.
+Return a `SourceList` with the list name, plain-text description, favicon URLs, and list image URL (`ImageUrl`) when available. Use only HTTPS image URLs on the source site or its known asset host.
+
+Put entries with a media type and provider IDs in `ProviderItems`. British Film Institute (BFI) lists are the only exception: put movie titles and release years in `MoviesByTitleYear` and leave `ProviderItems` empty.
 
 `CollectionSync` matches movies and series by media type and at least one shared provider name and ID. BFI lists explicitly use the separate movie title-and-year match described above. Sync finds existing collections by their `AutoCollections:<absolute source URL>` tags and adds only missing members.
 

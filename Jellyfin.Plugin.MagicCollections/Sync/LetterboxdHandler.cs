@@ -36,7 +36,7 @@ public sealed class LetterboxdHandler(HttpClient http, string dataPath) : ISourc
         }
 
         var listPath = GetCanonicalUrl(url).AbsolutePath;
-        var (name, description, filmPaths, faviconUrls) =
+        var (name, description, filmPaths, faviconUrls, imageUrl) =
             await ReadListPagesAsync(url, listPath, cancellationToken).ConfigureAwait(false);
         var items = new List<MediaIdentity>();
         foreach (var filmPath in filmPaths)
@@ -49,7 +49,7 @@ public sealed class LetterboxdHandler(HttpClient http, string dataPath) : ISourc
             }
         }
 
-        return new(name, items, description) { FaviconUrls = faviconUrls };
+        return new(name, items, description) { FaviconUrls = faviconUrls, ImageUrl = imageUrl };
     }
 
     private async Task<MediaIdentity?> FetchIdentityAsync(Uri source, string filmPath, CancellationToken cancellationToken)
@@ -64,7 +64,7 @@ public sealed class LetterboxdHandler(HttpClient http, string dataPath) : ISourc
         return ReadIdentity(film);
     }
 
-    private async Task<(string Name, string? Description, List<string> FilmPaths, IReadOnlyList<Uri> FaviconUrls)> ReadListPagesAsync(
+    private async Task<(string Name, string? Description, List<string> FilmPaths, IReadOnlyList<Uri> FaviconUrls, Uri? ImageUrl)> ReadListPagesAsync(
         Uri url, string listPath, CancellationToken cancellationToken)
     {
         var pagePath = listPath;
@@ -74,6 +74,7 @@ public sealed class LetterboxdHandler(HttpClient http, string dataPath) : ISourc
         string? name = null;
         string? description = null;
         IReadOnlyList<Uri> faviconUrls = [];
+        Uri? imageUrl = null;
         var filmPaths = new List<string>();
         var uniqueFilmPaths = new HashSet<string>(StringComparer.Ordinal);
         var entryIds = new HashSet<string>(StringComparer.Ordinal);
@@ -85,7 +86,9 @@ public sealed class LetterboxdHandler(HttpClient http, string dataPath) : ISourc
             {
                 var intro = document.QuerySelector(ListContent + " .list-title-intro");
                 description = ListDescription.Read(intro?.QuerySelector("#list-notes") ?? intro?.QuerySelector(".body-text"));
-                faviconUrls = SourceFavicons.FromPage(document, new Uri(Origin + pagePath), assetHost: "s.ltrbxd.com");
+                var pageUrl = new Uri(Origin + pagePath);
+                faviconUrls = SourceImages.ReadFaviconUrls(document, pageUrl, assetHost: "s.ltrbxd.com");
+                imageUrl = SourceImages.ReadListImageUrl(document, pageUrl, assetHost: "a.ltrbxd.com");
             }
             if ((name is not null && name != page.Name) || (total is not null && total != page.Total))
             {
@@ -119,7 +122,7 @@ public sealed class LetterboxdHandler(HttpClient http, string dataPath) : ISourc
                 {
                     throw InvalidPage(url, pagePath, "unexpected extra page");
                 }
-                return (name, description, filmPaths, faviconUrls);
+                return (name, description, filmPaths, faviconUrls, imageUrl);
             }
 
             var expectedNext = $"{listPath}page/{(++pageNumber).ToString(CultureInfo.InvariantCulture)}/";

@@ -29,10 +29,11 @@ public sealed class BfiHandler(HttpClient http) : ISourceListHandler
             throw new ArgumentException("Not a BFI editorial list URL.", nameof(url));
         }
 
+        var pageUrl = GetCanonicalUrl(url);
         string html;
         try
         {
-            using var response = await http.GetAsync(GetCanonicalUrl(url), cancellationToken).ConfigureAwait(false);
+            using var response = await http.GetAsync(pageUrl, cancellationToken).ConfigureAwait(false);
             if (response.StatusCode != HttpStatusCode.OK)
             {
                 throw new SourceListReadException(url, $"BFI returned HTTP {(int)response.StatusCode}.");
@@ -67,7 +68,11 @@ public sealed class BfiHandler(HttpClient http) : ISourceListHandler
 
         var name = ReadHeadline(page) ?? article.QuerySelector(":scope > header h1")?.TextContent.Trim();
         var description = page.Head?.QuerySelector("meta[property='og:description']")?.GetAttribute("content")?.Trim();
-        return new(name, [], description) { MoviesByTitleYear = movies };
+        return new(name, [], description)
+        {
+            MoviesByTitleYear = movies,
+            ImageUrl = SourceImages.ReadListImageUrl(page, pageUrl, assetHost: "core-cms.bfi.org.uk")
+        };
     }
 
     private static List<MovieTitleYear>? ReadMovies(IElement article)

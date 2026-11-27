@@ -27,7 +27,8 @@ public sealed class MdblistHandler(HttpClient http) : ISourceListHandler
                 : null;
             return new(heading?.TextContent.Trim(), ReadItems(json), ListDescription.Read(description))
             {
-                FaviconUrls = SourceFavicons.FromPage(page, pageUrl)
+                FaviconUrls = SourceImages.ReadFaviconUrls(page, pageUrl),
+                ImageUrl = SourceImages.ReadListImageUrl(page, pageUrl)
             };
         }
         catch (JsonException exception)

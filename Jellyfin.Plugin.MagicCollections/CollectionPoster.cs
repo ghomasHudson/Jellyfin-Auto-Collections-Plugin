@@ -9,7 +9,7 @@ namespace Jellyfin.Plugin.MagicCollections;
 
 internal static class CollectionPoster
 {
-    public static Stream Render(string title, SKBitmap? logo)
+    public static Stream Render(string title, SKBitmap? logo, SKBitmap? background)
     {
         const int width = 600;
         const int height = 900;
@@ -26,6 +26,18 @@ internal static class CollectionPoster
         using var paint = new SKPaint { Color = SKColors.White, IsAntialias = true, ColorFilter = white };
 
         canvas.Clear(SKColors.Black);
+        if (background is not null)
+        {
+            // Fill the portrait canvas without stretching, keeping the image centered.
+            var fillScale = Math.Max((float)width / background.Width, (float)height / background.Height);
+            var imageWidth = background.Width * fillScale;
+            var imageHeight = background.Height * fillScale;
+            var bounds = SKRect.Create((width - imageWidth) / 2, (height - imageHeight) / 2, imageWidth, imageHeight);
+            using var image = SKImage.FromBitmap(background);
+            canvas.DrawImage(image, bounds, new SKSamplingOptions(SKFilterMode.Linear));
+            canvas.DrawColor(new SKColor(0, 0, 0, 160), SKBlendMode.SrcOver);
+        }
+
         var lines = WrapTitle(title, text, maxTextWidth).ToArray();
         var logoScale = logo is null ? 0 : maxLogoSize / Math.Max(logo.Width, logo.Height);
         var logoWidth = (logo?.Width ?? 0) * logoScale;

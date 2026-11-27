@@ -38,6 +38,18 @@ public sealed class BfiCollectionSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task Passes_the_BFI_Open_Graph_image_to_the_collection_poster()
+    {
+        RecordArticle();
+        AddMedia(Title, 1997);
+
+        await SyncAsync();
+
+        Assert.Equal(new Uri("https://core-cms.bfi.org.uk/sites/default/files/rainy-day.jpg"),
+            Assert.Single(_library.ManagedCollections).PosterListImageUrl);
+    }
+
+    [Fact]
     public async Task Updates_the_managed_collection_overview_from_the_BFI_Open_Graph_description()
     {
         RecordArticle();

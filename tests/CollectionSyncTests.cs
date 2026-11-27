@@ -70,7 +70,9 @@ public class CollectionSyncTests
 
         await sync.RunAsync(["https://lists.example/festival-picks"], _ => { }, CancellationToken.None);
 
-        Assert.Equal("Festival picks", Assert.Single(library.ManagedCollections).PosterTitle);
+        var collection = Assert.Single(library.ManagedCollections);
+        Assert.Equal("Festival picks", collection.PosterTitle);
+        Assert.Null(collection.PosterListImageUrl);
     }
 
     [Fact]

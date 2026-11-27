@@ -90,14 +90,16 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task Uses_the_favicon_from_the_first_Letterboxd_list_page()
+    public async Task Uses_the_list_image_and_favicon_from_the_first_Letterboxd_list_page()
     {
         const string pageTwo = ListPath + "page/2/";
         const string seriesPath = "/film/the-example-series/";
         RecordHtml(ListPath, ListPage(ListPath, 2, Poster(0, MoviePath), pageTwo).Replace("</head>", """
+            <meta property="og:image" content="https://a.ltrbxd.com/resized/list.jpg?v=123">
             <link rel="shortcut icon" href="//s.ltrbxd.com/static/img/list-favicon.png"></head>
             """));
         RecordHtml(pageTwo, ListPage(pageTwo, 2, Poster(1, seriesPath)).Replace("</head>", """
+            <meta property="og:image" content="https://a.ltrbxd.com/resized/other-list.jpg">
             <link rel="icon" href="/another-favicon.png"></head>
             """));
         RecordHtml(MoviePath, Fixture("letterboxd-movie.html"));
@@ -106,9 +108,11 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
 
         await SyncListAsync();
 
+        var collection = Assert.Single(_library.ManagedCollections);
         Assert.Equal(
             [new Uri("https://s.ltrbxd.com/static/img/list-favicon.png"), new Uri(Origin + "/favicon.ico")],
-            Assert.Single(_library.ManagedCollections).PosterFaviconUrls);
+            collection.PosterFaviconUrls);
+        Assert.Equal(new Uri("https://a.ltrbxd.com/resized/list.jpg?v=123"), collection.PosterListImageUrl);
     }
 
     [Theory]

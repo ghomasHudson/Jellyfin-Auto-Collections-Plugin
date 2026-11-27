@@ -23,7 +23,7 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
                 services.GetRequiredService<IApplicationPaths>().DataPath));
         serviceCollection.AddSingleton<ISourceListHandler>(services => services.GetRequiredService<LetterboxdHandler>());
         serviceCollection.AddSingleton(services =>
-            new CollectionFaviconClient(services.GetRequiredService<SourceListHttpClient>()));
+            new CollectionImageClient(services.GetRequiredService<SourceListHttpClient>()));
         serviceCollection.AddSingleton<ISourceListHandler>(services =>
             new BfiHandler(services.GetRequiredService<SourceListHttpClient>()));
         serviceCollection.AddSingleton<ICollectionLibrary, JellyfinCollectionLibrary>();

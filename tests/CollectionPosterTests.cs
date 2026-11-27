@@ -17,6 +17,7 @@ namespace MagicCollections.Tests;
 public class CollectionPosterTests
 {
     private static readonly Uri SourceIcon = new("https://example.com/icon.png");
+    private static readonly Uri ListImage = new("https://example.com/list.jpg");
 
     [Fact]
     public async Task Saves_a_black_portrait_PNG_with_white_title_text_as_the_primary_image()
@@ -24,7 +25,7 @@ public class CollectionPosterTests
         var collection = new TestCollection { Id = Guid.NewGuid(), Name = "Festival picks" };
         using var host = new JellyfinBoundary(collection);
 
-        await host.Library.EnsurePosterAsync(collection.Id, [], CancellationToken.None);
+        await host.Library.EnsurePosterAsync(collection.Id, [], null, CancellationToken.None);
 
         Assert.Equal("image/png", host.MimeType);
         Assert.Equal(ImageType.Primary, Assert.Single(collection.ImageInfos).Type);
@@ -55,9 +56,9 @@ public class CollectionPosterTests
         // An ICO can contain a PNG frame.
         responses.Record(fallback.AbsoluteUri, () => new(HttpStatusCode.OK) { Content = new ByteArrayContent(WrapInIcon(data.ToArray())) });
         using var http = new HttpClient(responses);
-        using var host = new JellyfinBoundary(collection, faviconHttp: http);
+        using var host = new JellyfinBoundary(collection, imageHttp: http);
 
-        await host.Library.EnsurePosterAsync(collection.Id, [SourceIcon, fallback], CancellationToken.None);
+        await host.Library.EnsurePosterAsync(collection.Id, [SourceIcon, fallback], null, CancellationToken.None);
 
         Assert.Equal([SourceIcon.AbsoluteUri, fallback.AbsoluteUri], responses.Requests);
         using var poster = DecodePoster(host);
@@ -70,6 +71,41 @@ public class CollectionPosterTests
         Assert.InRange(logo.Max(pixel => pixel.x) - logo.Min(pixel => pixel.x) + 1, 81, 84);
         Assert.Equal(SKColors.Black, poster.GetPixel(poster.Width / 2 + 48, (top + bottom) / 2));
         Assert.Contains(Enumerable.Range(bottom + 1, poster.Height - bottom - 1), row => HasWhitePixels(poster, row));
+    }
+
+    [Fact]
+    public async Task Center_crops_and_darkens_the_list_image_behind_the_favicon_and_title()
+    {
+        var collection = new TestCollection { Id = Guid.NewGuid(), Name = "Festival picks" };
+        using var background = new SKBitmap(1200, 600);
+        using (var canvas = new SKCanvas(background))
+        {
+            canvas.Clear(SKColors.Red);
+            using var paint = new SKPaint { Color = SKColors.White };
+            canvas.DrawRect(300, 0, 600, 300, paint);
+            paint.Color = SKColors.Cyan;
+            canvas.DrawRect(300, 300, 600, 300, paint);
+        }
+        using var data = background.Encode(SKEncodedImageFormat.Png, 100);
+        var responses = new RecordedHttpResponses();
+        responses.Record(SourceIcon.AbsoluteUri, () => new(HttpStatusCode.OK) { Content = new ByteArrayContent(EncodeSolidImage(24)) });
+        responses.Record(ListImage.AbsoluteUri, () => new(HttpStatusCode.OK) { Content = new ByteArrayContent(data.ToArray()) });
+        using var http = new HttpClient(responses);
+        using var host = new JellyfinBoundary(collection, imageHttp: http);
+
+        await host.Library.EnsurePosterAsync(collection.Id, [SourceIcon], ListImage, CancellationToken.None);
+
+        using var poster = DecodePoster(host);
+        var top = poster.GetPixel(0, 0);
+        var bottom = poster.GetPixel(0, poster.Height - 1);
+        // The red side strips are cropped, the white top and cyan bottom are darkened.
+        Assert.InRange(top.Red, 1, 127);
+        Assert.Equal(new SKColor(top.Red, top.Red, top.Red), top);
+        Assert.Equal(new SKColor(0, top.Red, top.Red), bottom);
+        Assert.Equal(top, poster.GetPixel(poster.Width - 1, 0));
+        Assert.Equal(bottom, poster.GetPixel(poster.Width - 1, poster.Height - 1));
+        Assert.Contains(SKColors.OrangeRed, poster.Pixels);
+        Assert.Contains(SKColors.White, poster.Pixels);
     }
 
     [Theory]
@@ -85,35 +121,71 @@ public class CollectionPosterTests
         responses.Record(SourceIcon.AbsoluteUri, () => failure switch
         {
             "invalid" => new(HttpStatusCode.OK) { Content = new StringContent("Not an image") },
-            "oversized image" => new(HttpStatusCode.OK) { Content = new ByteArrayContent(EncodeLargeImage()) },
+            "oversized image" => new(HttpStatusCode.OK) { Content = new ByteArrayContent(EncodeSolidImage(1024)) },
             "oversized response" => new(HttpStatusCode.OK) { Content = new ByteArrayContent(new byte[65_537]) },
             "redirect" => new(HttpStatusCode.Found) { Headers = { Location = new Uri(SourceIcon, "/redirected.png") } },
             _ => throw new HttpRequestException("Connection failed.")
         });
         using var http = new HttpClient(responses);
-        using var host = new JellyfinBoundary(collection, faviconHttp: http);
+        using var host = new JellyfinBoundary(collection, imageHttp: http);
 
-        await host.Library.EnsurePosterAsync(collection.Id, [SourceIcon], CancellationToken.None);
+        await host.Library.EnsurePosterAsync(collection.Id, [SourceIcon], null, CancellationToken.None);
 
-        using var plainPoster = CollectionPoster.Render(collection.Name, null);
+        using var plainPoster = CollectionPoster.Render(collection.Name, null, null);
         using var expected = SKBitmap.Decode(plainPoster);
         using var actual = DecodePoster(host);
         Assert.True(expected.Pixels.SequenceEqual(actual.Pixels));
     }
 
-    [Fact]
-    public async Task A_cancelled_favicon_request_cancels_poster_generation()
+    [Theory]
+    [InlineData("invalid")]
+    [InlineData("oversized image")]
+    [InlineData("oversized response")]
+    [InlineData("redirect")]
+    [InlineData("not found")]
+    public async Task Keeps_the_black_background_and_favicon_when_the_list_image_cannot_be_used(string failure)
+    {
+        var collection = new TestCollection { Id = Guid.NewGuid(), Name = "Festival picks" };
+        var responses = new RecordedHttpResponses();
+        var icon = EncodeSolidImage(24);
+        responses.Record(SourceIcon.AbsoluteUri, () => new(HttpStatusCode.OK) { Content = new ByteArrayContent(icon) });
+        responses.Record(ListImage.AbsoluteUri, () => failure switch
+        {
+            "invalid" => new(HttpStatusCode.OK) { Content = new StringContent("Not an image") },
+            "oversized image" => new(HttpStatusCode.OK) { Content = new ByteArrayContent(EncodeSolidImage(4097)) },
+            "oversized response" => new(HttpStatusCode.OK) { Content = new ByteArrayContent(new byte[4 * 1024 * 1024 + 1]) },
+            "redirect" => new(HttpStatusCode.Found) { Headers = { Location = new Uri(ListImage, "/redirected.png") } },
+            _ => new(HttpStatusCode.NotFound)
+        });
+        using var http = new HttpClient(responses);
+        using var host = new JellyfinBoundary(collection, imageHttp: http);
+
+        await host.Library.EnsurePosterAsync(collection.Id, [SourceIcon], ListImage, CancellationToken.None);
+
+        using var logo = SKBitmap.Decode(icon);
+        using var plainPoster = CollectionPoster.Render(collection.Name, logo, null);
+        using var expected = SKBitmap.Decode(plainPoster);
+        using var actual = DecodePoster(host);
+        Assert.True(expected.Pixels.SequenceEqual(actual.Pixels));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_cancelled_source_image_request_cancels_poster_generation(bool isListImage)
     {
         var collection = new TestCollection { Id = Guid.NewGuid(), Name = "Festival picks" };
         var responses = new RecordedHttpResponses();
         var pending = new TaskCompletionSource<HttpResponseMessage>();
-        responses.RecordPending(SourceIcon.AbsoluteUri, pending.Task);
+        var url = isListImage ? ListImage : SourceIcon;
+        responses.RecordPending(url.AbsoluteUri, pending.Task);
         using var http = new HttpClient(responses);
-        using var host = new JellyfinBoundary(collection, faviconHttp: http);
+        using var host = new JellyfinBoundary(collection, imageHttp: http);
         using var cancellation = new CancellationTokenSource();
 
-        var generating = host.Library.EnsurePosterAsync(collection.Id, [SourceIcon], cancellation.Token);
-        Assert.Equal(SourceIcon.AbsoluteUri, Assert.Single(responses.Requests));
+        var generating = host.Library.EnsurePosterAsync(collection.Id,
+            isListImage ? [] : [SourceIcon], isListImage ? ListImage : null, cancellation.Token);
+        Assert.Equal(url.AbsoluteUri, Assert.Single(responses.Requests));
         cancellation.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => generating);
@@ -130,7 +202,7 @@ public class CollectionPosterTests
         };
         using var host = new JellyfinBoundary(collection);
 
-        await host.Library.EnsurePosterAsync(collection.Id, [], CancellationToken.None);
+        await host.Library.EnsurePosterAsync(collection.Id, [], null, CancellationToken.None);
 
         using var poster = DecodePoster(host);
         Assert.Contains(Enumerable.Range(poster.Height / 2 - 130, 80), row => HasWhitePixels(poster, row));
@@ -147,7 +219,7 @@ public class CollectionPosterTests
         };
         using var host = new JellyfinBoundary(collection);
 
-        await host.Library.EnsurePosterAsync(collection.Id, [], CancellationToken.None);
+        await host.Library.EnsurePosterAsync(collection.Id, [], null, CancellationToken.None);
 
         using var poster = DecodePoster(host);
         Assert.Contains(Enumerable.Range(poster.Height / 2 - 150, 95), row => HasWhitePixels(poster, row));
@@ -162,8 +234,8 @@ public class CollectionPosterTests
         using var host = new JellyfinBoundary(title);
         using var comparison = new JellyfinBoundary(repeated);
 
-        await host.Library.EnsurePosterAsync(title.Id, [], CancellationToken.None);
-        await comparison.Library.EnsurePosterAsync(repeated.Id, [], CancellationToken.None);
+        await host.Library.EnsurePosterAsync(title.Id, [], null, CancellationToken.None);
+        await comparison.Library.EnsurePosterAsync(repeated.Id, [], null, CancellationToken.None);
 
         using var poster = DecodePoster(host);
         using var repeatedPoster = DecodePoster(comparison);
@@ -179,8 +251,8 @@ public class CollectionPosterTests
         using var host = new JellyfinBoundary(joined);
         using var comparison = new JellyfinBoundary(unjoined);
 
-        await host.Library.EnsurePosterAsync(joined.Id, [], CancellationToken.None);
-        await comparison.Library.EnsurePosterAsync(unjoined.Id, [], CancellationToken.None);
+        await host.Library.EnsurePosterAsync(joined.Id, [], null, CancellationToken.None);
+        await comparison.Library.EnsurePosterAsync(unjoined.Id, [], null, CancellationToken.None);
 
         using var poster = DecodePoster(host);
         using var comparisonPoster = DecodePoster(comparison);
@@ -197,8 +269,8 @@ public class CollectionPosterTests
         using var host = new JellyfinBoundary(rtl);
         using var comparison = new JellyfinBoundary(ltr);
 
-        await host.Library.EnsurePosterAsync(rtl.Id, [], CancellationToken.None);
-        await comparison.Library.EnsurePosterAsync(ltr.Id, [], CancellationToken.None);
+        await host.Library.EnsurePosterAsync(rtl.Id, [], null, CancellationToken.None);
+        await comparison.Library.EnsurePosterAsync(ltr.Id, [], null, CancellationToken.None);
 
         using var poster = DecodePoster(host);
         using var comparisonPoster = DecodePoster(comparison);
@@ -225,9 +297,9 @@ public class CollectionPosterTests
         var collection = new TestCollection { Id = Guid.NewGuid(), Name = "Festival picks", ImageInfos = [original] };
         var responses = new RecordedHttpResponses();
         using var http = new HttpClient(responses);
-        using var host = new JellyfinBoundary(collection, faviconHttp: http);
+        using var host = new JellyfinBoundary(collection, imageHttp: http);
 
-        await host.Library.EnsurePosterAsync(collection.Id, [SourceIcon], CancellationToken.None);
+        await host.Library.EnsurePosterAsync(collection.Id, [SourceIcon], ListImage, CancellationToken.None);
 
         Assert.Empty(responses.Requests);
         Assert.Same(original, Assert.Single(collection.ImageInfos));
@@ -251,7 +323,7 @@ public class CollectionPosterTests
         using var host = new JellyfinBoundary(collection);
         File.Delete(path);
 
-        await host.Library.EnsurePosterAsync(collection.Id, [], CancellationToken.None);
+        await host.Library.EnsurePosterAsync(collection.Id, [], null, CancellationToken.None);
 
         Assert.NotEqual(path, Assert.Single(collection.ImageInfos).Path);
         Assert.Equal(ItemUpdateType.ImageUpdate, collection.LastUpdate);
@@ -270,7 +342,7 @@ public class CollectionPosterTests
         var collection = new TestCollection { Id = Guid.NewGuid(), Name = "Festival picks", ImageInfos = [original] };
         using var host = new JellyfinBoundary(collection);
 
-        await host.Library.EnsurePosterAsync(collection.Id, [], CancellationToken.None);
+        await host.Library.EnsurePosterAsync(collection.Id, [], null, CancellationToken.None);
 
         Assert.Same(original, Assert.Single(collection.ImageInfos));
         Assert.Null(host.Image);
@@ -281,12 +353,12 @@ public class CollectionPosterTests
     {
         var collection = new TestCollection { Id = Guid.NewGuid(), Name = "Festival picks" };
         using var host = new JellyfinBoundary(collection);
-        await host.Library.EnsurePosterAsync(collection.Id, [], CancellationToken.None);
+        await host.Library.EnsurePosterAsync(collection.Id, [], null, CancellationToken.None);
         var original = host.Image;
         Assert.NotNull(original);
 
         collection.Name = "My festival";
-        await host.Library.EnsurePosterAsync(collection.Id, [], CancellationToken.None);
+        await host.Library.EnsurePosterAsync(collection.Id, [], null, CancellationToken.None);
 
         Assert.Same(original, host.Image);
     }
@@ -307,7 +379,7 @@ public class CollectionPosterTests
         };
         using var host = new JellyfinBoundary(collection, updated);
 
-        await host.Library.EnsurePosterAsync(collection.Id, [], CancellationToken.None);
+        await host.Library.EnsurePosterAsync(collection.Id, [], null, CancellationToken.None);
 
         Assert.Equal(path, Assert.Single(updated.ImageInfos).Path);
         Assert.Equal(customPoster, File.ReadAllText(path));
@@ -341,9 +413,9 @@ public class CollectionPosterTests
         return data.ToArray();
     }
 
-    private static byte[] EncodeLargeImage()
+    private static byte[] EncodeSolidImage(int width)
     {
-        using var bitmap = new SKBitmap(1024, 1);
+        using var bitmap = new SKBitmap(width, 12);
         bitmap.Erase(SKColors.OrangeRed);
         using var data = bitmap.Encode(SKEncodedImageFormat.Png, 100);
         return data.ToArray();
@@ -374,7 +446,7 @@ public class CollectionPosterTests
         private readonly ServiceProvider _services;
         private readonly TestFiles _files = new();
 
-        public JellyfinBoundary(TestCollection collection, TestCollection? afterFirstRead = null, HttpClient? faviconHttp = null)
+        public JellyfinBoundary(TestCollection collection, TestCollection? afterFirstRead = null, HttpClient? imageHttp = null)
         {
             var firstRead = true;
             var services = new ServiceCollection();
@@ -392,9 +464,9 @@ public class CollectionPosterTests
                 _ => throw new NotSupportedException(method.Name)
             }));
             new ServiceRegistrator().RegisterServices(services, null!);
-            if (faviconHttp is not null)
+            if (imageHttp is not null)
             {
-                services.AddSingleton(new CollectionFaviconClient(faviconHttp));
+                services.AddSingleton(new CollectionImageClient(imageHttp));
             }
 
             _services = services.BuildServiceProvider();

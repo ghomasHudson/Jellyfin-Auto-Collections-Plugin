@@ -12,7 +12,7 @@ namespace Jellyfin.Plugin.MagicCollections;
 
 internal sealed class JellyfinCollectionLibrary(
     ILibraryManager library, ICollectionManager collections, IProviderManager providers,
-    CollectionFaviconClient favicons) : ICollectionLibrary
+    CollectionImageClient images) : ICollectionLibrary
 {
     public IEnumerable<LibraryMedia> GetMedia()
     {
@@ -74,7 +74,7 @@ internal sealed class JellyfinCollectionLibrary(
         return collection.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, cancellationToken);
     }
 
-    public async Task EnsurePosterAsync(Guid id, IReadOnlyList<Uri> faviconUrls, CancellationToken cancellationToken)
+    public async Task EnsurePosterAsync(Guid id, IReadOnlyList<Uri> faviconUrls, Uri? listImageUrl, CancellationToken cancellationToken)
     {
         if (library.GetItemById(id) is not BoxSet collection || HasCurrentPoster(collection))
         {
@@ -82,9 +82,10 @@ internal sealed class JellyfinCollectionLibrary(
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        using var logo = await favicons.TryLoadAsync(faviconUrls, cancellationToken).ConfigureAwait(false);
+        using var logo = await images.TryLoadFaviconAsync(faviconUrls, cancellationToken).ConfigureAwait(false);
+        using var background = await images.TryLoadListImageAsync(listImageUrl, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        using var poster = CollectionPoster.Render(collection.Name, logo);
+        using var poster = CollectionPoster.Render(collection.Name, logo, background);
 
         // Jellyfin's SaveImage isn't conditional. Recheck after rendering to narrow the
         // race with an upload, but another writer can still enter after this check.
