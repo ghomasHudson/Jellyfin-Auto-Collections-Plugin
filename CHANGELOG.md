@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.5.0.0 (2026-11-27)
+
+### Feat
+
+- **trakt**: sync private lists with PKCE sign-in
+
+### Fix
+
+- **posters**: make icons opt-in and restore Trakt favicon downloads
+- **imdb**: remove direct source sync and browser helper
+- **trakt**: streamline private list setup and OAuth
+
 ## v0.4.2.0 (2026-11-27)
 
 ### Fix
