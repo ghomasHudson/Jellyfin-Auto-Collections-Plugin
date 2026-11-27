@@ -129,6 +129,30 @@ public sealed class ImdbHelperInstallerTests : IDisposable
         Assert.Empty(Directory.EnumerateFileSystemEntries(Path.Combine(_data.FullName, "magic-collections", "imdb-helper")));
     }
 
+    [Theory]
+    [InlineData(126, "env: private path: Permission denied", "Check that its runtime user can traverse the directories")]
+    [InlineData(127, "env: private path: No such file or directory", "executable or one of its runtime dependencies could not be loaded")]
+    [InlineData(1, "IMDb sandboxed browser could not start.", "IMDb sandboxed browser could not start.")]
+    [InlineData(1, "IMDb navigation failed.", "IMDb navigation failed.")]
+    [InlineData(1, "private path\nIMDb navigation failed.", "The IMDb helper did not return a page.")]
+    public async Task Renderer_reports_known_failures_without_exposing_raw_stderr(int exitCode, string stderr, string reason)
+    {
+        if (!OperatingSystem.IsLinux())
+            return;
+
+        // The stock container can start as root; the renderer then runs the helper as nobody.
+        File.SetUnixFileMode(_data.FullName, UnixFileMode.UserRead | UnixFileMode.UserWrite |
+            UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute);
+        var payload = Archive(python: $"#!/bin/sh\nprintf '%s\\n' '{stderr}' >&2\nexit {exitCode}\n");
+        using var client = Client((_, _) => Task.FromResult(Download(payload)));
+        var renderer = new BundledImdbPageRenderer(Installer(client, payload));
+        var error = await Assert.ThrowsAsync<SourceListReadException>(() =>
+            renderer.RenderAsync(new("https://www.imdb.com/list/ls055592025/"), default));
+
+        Assert.Contains(reason, error.Reason);
+        Assert.DoesNotContain("private path", error.Reason);
+    }
+
     public void Dispose() => _data.Delete(recursive: true);
 
     private ImdbHelperInstaller Installer(HttpClient client, byte[] payload) =>
@@ -140,7 +164,7 @@ public sealed class ImdbHelperInstallerTests : IDisposable
     private static HttpResponseMessage Download(byte[] payload) =>
         new(HttpStatusCode.OK) { Content = new ByteArrayContent(payload) };
 
-    private static byte[] Archive(string? extra = null, int mode = 0)
+    private static byte[] Archive(string? extra = null, int mode = 0, string python = "test")
     {
         using var bytes = new MemoryStream();
         using (var zip = new ZipArchive(bytes, ZipArchiveMode.Create, leaveOpen: true))
@@ -148,19 +172,19 @@ public sealed class ImdbHelperInstallerTests : IDisposable
             foreach (var name in new[] { ImdbHelperInstaller.PythonPath, ImdbHelperInstaller.ScriptPath,
                          ImdbHelperInstaller.DriverPath, "native/lib.so",
                          "browsers/chromium_headless_shell-123/chrome-headless-shell-linux64/chrome-headless-shell" })
-                Add(zip, name, 0x81ED);
+                Add(zip, name, 0x81ED, name == ImdbHelperInstaller.PythonPath ? python : "test");
             if (extra is not null)
                 Add(zip, extra, mode);
         }
         return bytes.ToArray();
     }
 
-    private static void Add(ZipArchive zip, string name, int mode)
+    private static void Add(ZipArchive zip, string name, int mode, string contents = "test")
     {
         var entry = zip.CreateEntry(name);
         entry.ExternalAttributes = mode << 16;
         using var writer = new StreamWriter(entry.Open());
-        writer.Write("test");
+        writer.Write(contents);
     }
 
     private sealed class FakeHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler)

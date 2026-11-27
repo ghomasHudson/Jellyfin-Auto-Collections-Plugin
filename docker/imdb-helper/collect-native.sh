@@ -25,14 +25,18 @@ dpkg-query -W -f='${Package} ${Version}\n' | sort > /tmp/base-packages
 apt-get -o Acquire::Retries=3 update
 apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
     libatomic1 libglib2.0-0t64 libnss3 libnspr4 libatk-bridge2.0-0t64 \
-    libdbus-1-3 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
+    libdbus-1-3 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxrandr2 \
     libgbm1 libxkbcommon0 libasound2t64
 dpkg-query -W -f='${Package} ${Version}\n' | sort > /tmp/with-packages
 
-# Reuse libraries already available in the pinned runtime; never ship glibc or ld-linux.
+# Reuse most libraries already available in the pinned runtime; never ship glibc or ld-linux.
+# Include libXext explicitly: Chromium needs it, but LinuxServer's Jellyfin image can lack it.
 # This is intentionally based on versions as well as package names.
 mkdir -p /bundle/native /bundle/licenses/debian
-comm -13 /tmp/base-packages /tmp/with-packages > /tmp/added-packages
+{
+    comm -13 /tmp/base-packages /tmp/with-packages
+    dpkg-query -W -f='${Package} ${Version}\n' libxext6
+} | sort -u > /tmp/bundled-packages
 cat > /bundle/licenses/debian/sources.txt <<EOF
 Unmodified Debian 13 packages; see their copyright files and corresponding source packages:
 https://snapshot.debian.org/archive/debian/$snapshot/
@@ -68,5 +72,5 @@ while read -r pkg _; do
                 if [ -f "$path" ]; then cp -L "$path" /bundle/native/; fi ;;
         esac
     done < /tmp/package-files
-done < /tmp/added-packages
+done < /tmp/bundled-packages
 cp -rL /usr/share/common-licenses /bundle/licenses/debian/

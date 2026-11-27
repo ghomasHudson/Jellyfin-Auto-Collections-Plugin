@@ -21,6 +21,16 @@ the system loader and libraries already present in that image. Run as a
 non-root user, with writable private temporary storage and a container/kernel
 that permits the Chromium namespace sandbox. There is no unsandboxed fallback.
 
+When Jellyfin itself runs as root, the plugin uses UID/GID 65534 for the
+helper. That user needs execute (traverse) access on every parent directory
+of the installed helper. If the data mount is private to root, run Jellyfin
+as a non-root user with access to its data instead. A `noexec` data mount
+also prevents the bundled helper from starting.
+
+The bundle includes `libXext.so.6` because some images, including LinuxServer's
+Jellyfin image, omit it. The official image is the tested target; other images
+may still lack libraries that the helper expects from the runtime.
+
 The archive records `0755` for these three files and `0644` for other files.
 The plugin applies read-only modes after extraction: `0555` for these three
 files and `0444` for other files. It also sets `LD_LIBRARY_PATH` to

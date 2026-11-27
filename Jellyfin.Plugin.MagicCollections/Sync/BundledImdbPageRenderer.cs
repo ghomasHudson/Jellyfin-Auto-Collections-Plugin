@@ -10,6 +10,7 @@ namespace Jellyfin.Plugin.MagicCollections.Sync;
 internal sealed class BundledImdbPageRenderer(ImdbHelperInstaller installer) : IImdbPageRenderer
 {
     private const int MaxReplyChars = 16 * 1024 * 1024;
+    private const int MaxDiagnosticBytes = 256;
     private readonly SemaphoreSlim _gate = new(1);
 
     public async Task<string> RenderAsync(Uri canonicalUrl, CancellationToken ct)
@@ -104,14 +105,14 @@ internal sealed class BundledImdbPageRenderer(ImdbHelperInstaller installer) : I
         using var process = Process.Start(start) ?? throw new InvalidOperationException("Could not launch the IMDb helper.");
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(TimeSpan.FromSeconds(40));
-        var stderr = process.StandardError.BaseStream.CopyToAsync(Stream.Null, deadline.Token);
+        var stderr = ReadDiagnosticAsync(process.StandardError.BaseStream, deadline.Token);
         try
         {
             var reply = await ReadReplyAsync(process.StandardOutput, deadline.Token).ConfigureAwait(false);
             await process.WaitForExitAsync(deadline.Token).ConfigureAwait(false);
-            await stderr.ConfigureAwait(false);
+            var diagnostic = await stderr.ConfigureAwait(false);
             if (reply.Length == 0)
-                throw new InvalidDataException("The IMDb helper did not return a page. Check network access and whether this host supports Chromium sandboxing.");
+                throw new InvalidDataException(DescribeEmptyReply(process.ExitCode, diagnostic));
             using var json = JsonDocument.Parse(reply);
             var root = json.RootElement;
             if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("status", out var statusValue) ||
@@ -147,6 +148,35 @@ internal sealed class BundledImdbPageRenderer(ImdbHelperInstaller installer) : I
             catch (OperationCanceledException) { }
             catch (IOException) { }
         }
+    }
+
+    private static string DescribeEmptyReply(int exitCode, string? diagnostic) => (exitCode, diagnostic) switch
+    {
+        (126, _) => "The IMDb helper could not be executed. Check that its runtime user can traverse the directories leading to the helper and that the filesystem allows execution.",
+        (127, _) => "The IMDb helper executable or one of its runtime dependencies could not be loaded.",
+        (1, "IMDb sandboxed browser could not start.") => "IMDb sandboxed browser could not start. Check that the host permits Chromium's namespace sandbox and that the helper's dependencies are available.",
+        (1, "IMDb navigation failed.") => "IMDb navigation failed. Check that Jellyfin can reach www.imdb.com.",
+        (1, "IMDb rendering timed out.") => "IMDb rendering timed out.",
+        (1, "IMDb returned an unexpected route.") => "IMDb redirected to an unexpected route.",
+        (1, "IMDb did not finish loading a document.") => "IMDb did not finish loading a document.",
+        (1, "IMDb page data is missing or ambiguous.") => "IMDb page data is missing or ambiguous. Check that the list is public.",
+        _ => "The IMDb helper did not return a page. Check network access and whether this host supports Chromium sandboxing.",
+    };
+
+    private static async Task<string?> ReadDiagnosticAsync(Stream stream, CancellationToken ct)
+    {
+        // Read only enough to match a known diagnostic. Drain larger output so the helper
+        // cannot block waiting to write, but never include raw stderr in an exception.
+        var buffer = new byte[MaxDiagnosticBytes];
+        var length = await stream.ReadAtLeastAsync(buffer, buffer.Length, false, ct)
+            .ConfigureAwait(false);
+        if (length == buffer.Length)
+        {
+            await stream.CopyToAsync(Stream.Null, ct).ConfigureAwait(false);
+            return null;
+        }
+
+        return Encoding.UTF8.GetString(buffer, 0, length).TrimEnd('\r', '\n');
     }
 
     private static async Task<string> ReadReplyAsync(StreamReader reader, CancellationToken ct)
