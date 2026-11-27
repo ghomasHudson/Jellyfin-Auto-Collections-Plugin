@@ -1,4 +1,5 @@
 using Jellyfin.Plugin.MagicCollections;
+using Jellyfin.Plugin.MagicCollections.Configuration;
 using Jellyfin.Plugin.MagicCollections.Sync;
 using MediaBrowser.Common.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,6 +31,22 @@ public sealed class ServiceRegistratorTests
         var handler = Assert.Single(provider.GetServices<ISourceListHandler>(), h => h.Supports(bfiList));
 
         Assert.IsType<BfiHandler>(handler);
+    }
+
+    [Theory]
+    [InlineData("https://mdblist.com/lists/snoak/latest-movies-digital-release", true)]
+    [InlineData("https://letterboxd.com/example/list/movies/", true)]
+    [InlineData("https://www.bfi.org.uk/lists/10-great-documentaries-that-play-like-thrillers", true)]
+    [InlineData("https://popular-movies-data.stevenlu.com/movies.json", true)]
+    [InlineData("https://letterboxd.com/film/the-matrix/", false)]
+    [InlineData("https://example.com/list", false)]
+    [InlineData("not a URL", false)]
+    public void Source_list_validation_reports_whether_a_registered_handler_supports_the_URL(string url, bool supported)
+    {
+        using var provider = BuildProvider();
+        var validation = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
+
+        Assert.Equal(supported, validation.Validate(new(url)));
     }
 
     private static ServiceProvider BuildProvider()

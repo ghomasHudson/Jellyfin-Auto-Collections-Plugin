@@ -10,19 +10,24 @@
             #magicCollectionsUrls .inputLabel {
                 display: none;
             }
+            #magicCollectionsUrls .sourceUrlWarning:not(:empty) {
+                margin-top: .25em;
+                font-size: .9em;
+            }
         </style>
         <div data-role="content">
             <div class="content-primary">
                 <h1>Magic Collections</h1>
                 <form>
                     <h3 id="magicCollectionsUrlsHeading">Source list URLs</h3>
-                    <p class="fieldDescription">Add URLs for list sources. Must be a list source supported by the plugin.</p>
+                    <p class="fieldDescription">Add URLs for supported source lists.</p>
                     <div id="magicCollectionsUrls" role="group" aria-labelledby="magicCollectionsUrlsHeading"></div>
                     <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
                 </form>
                 <template id="magicCollectionsUrlRow">
                     <div class="inputContainer">
                         <input is="emby-input" type="text" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://mdblist.com/lists/snoak/latest-movies-digital-release" />
+                        <div class="fieldDescription sourceUrlWarning" role="status"></div>
                     </div>
                 </template>
             </div>
@@ -34,20 +39,52 @@
                 const form = page.querySelector('form');
                 const urls = page.querySelector('#magicCollectionsUrls');
                 const template = page.querySelector('#magicCollectionsUrlRow');
+                let nextWarningId = 0;
 
+                // Jellyfin translates template placeholders in the whole page, including inline scripts.
                 function urlLabel(index) {
-                    return `Source list URL ${index + 1}`;
+                    return 'Source list URL ' + (index + 1);
                 }
 
                 function addUrl(value = '') {
                     const row = template.content.firstElementChild.cloneNode(true);
                     const input = row.querySelector('input');
+                    const warning = row.querySelector('[role="status"]');
+                    warning.id = 'magicCollectionsUrlWarning' + (++nextWarningId);
                     input.setAttribute('aria-label', urlLabel(urls.children.length));
+                    input.setAttribute('aria-describedby', warning.id);
                     input.value = value;
+
+                    let timer;
+                    let edit = 0;
+                    async function checkUrl(url, checkedEdit) {
+                        try {
+                            const supported = await ApiClient.ajax({
+                                type: 'POST',
+                                url: ApiClient.getUrl('MagicCollections/SourceListUrl'),
+                                data: JSON.stringify({ Url: url }),
+                                contentType: 'application/json',
+                                dataType: 'json'
+                            });
+                            if (supported === false && checkedEdit === edit && row.isConnected) {
+                                warning.textContent = 'This doesn’t look like a supported source list URL. You can still save it.';
+                            }
+                        } catch {
+                            // A failed check doesn't mean the URL is unsupported.
+                        }
+                    }
+
                     input.addEventListener('input', () => {
-                        if (row === urls.lastElementChild && input.value.trim()) {
+                        clearTimeout(timer);
+                        edit++;
+                        warning.textContent = '';
+                        const url = input.value.trim();
+                        if (!url) return;
+                        if (row === urls.lastElementChild) {
                             addUrl();
                         }
+                        const checkedEdit = edit;
+                        timer = setTimeout(() => checkUrl(url, checkedEdit), 400);
                     });
                     input.addEventListener('blur', () => {
                         if (row !== urls.lastElementChild && !input.value.trim()) {
@@ -56,6 +93,9 @@
                         }
                     });
                     urls.appendChild(row);
+                    if (value.trim()) {
+                        checkUrl(value.trim(), edit);
+                    }
                 }
 
                 function renderUrls(values) {
