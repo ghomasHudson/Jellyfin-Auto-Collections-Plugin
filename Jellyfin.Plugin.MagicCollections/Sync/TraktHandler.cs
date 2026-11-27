@@ -19,6 +19,11 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
 
     public Uri GetCanonicalUrl(Uri url) => RequireSource(url).CanonicalUrl;
 
+    internal static string CanonicalizeConfiguredUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) && ParseSource(uri) is { } source
+            ? source.CanonicalUrl.AbsoluteUri
+            : url;
+
     public async Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken)
     {
         var source = RequireSource(url);

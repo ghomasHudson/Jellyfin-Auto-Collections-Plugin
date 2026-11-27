@@ -153,11 +153,13 @@
                     }
                 }
 
-                page.addEventListener('pageshow', () => withConfiguration(config => {
+                function renderConfiguration(config) {
                     renderUrls(config.SourceUrls || []);
                     checkboxOptions.forEach(option => { option.checked = config[option.name] ?? option.defaultChecked; });
                     traktClientId.value = config.TraktClientId ?? '';
-                }));
+                }
+
+                page.addEventListener('pageshow', () => withConfiguration(renderConfiguration));
                 // Keep a blank row from collapsing on blur before the Save click completes.
                 form.querySelector('button[type="submit"]').addEventListener('mousedown', event => event.preventDefault());
                 form.addEventListener('submit', event => {
@@ -167,9 +169,8 @@
                         checkboxOptions.forEach(option => { config[option.name] = option.checked; });
                         config.TraktClientId = traktClientId.value.trim();
                         const result = await ApiClient.updatePluginConfiguration(pluginId, config);
-                        renderUrls(config.SourceUrls);
-                        traktClientId.value = config.TraktClientId;
                         Dashboard.processPluginConfigurationUpdateResult(result);
+                        renderConfiguration(await ApiClient.getPluginConfiguration(pluginId));
                     });
                 });
             })();

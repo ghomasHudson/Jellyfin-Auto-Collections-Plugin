@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using Jellyfin.Plugin.MagicCollections.Configuration;
+using Jellyfin.Plugin.MagicCollections.Sync;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Plugins;
@@ -33,6 +35,18 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
     // Keep reading the existing settings after renaming the DLL.
     public override string ConfigurationFileName => "Jellyfin.Plugin.AutoCollections.xml";
+
+    /// <inheritdoc />
+    public override void UpdateConfiguration(BasePluginConfiguration configuration)
+    {
+        // Jellyfin calls this for dashboard and direct API saves, before writing the XML.
+        if (configuration is PluginConfiguration { SourceUrls: { } urls } settings)
+        {
+            settings.SourceUrls = urls.Select(TraktHandler.CanonicalizeConfiguredUrl).ToArray();
+        }
+
+        base.UpdateConfiguration(configuration);
+    }
 
     /// <summary>
     /// Gets the current plugin instance.

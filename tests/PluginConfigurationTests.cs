@@ -1,34 +1,76 @@
 using System.Text.Json;
 using System.Xml.Serialization;
 using Jellyfin.Extensions.Json;
+using Jellyfin.Plugin.MagicCollections;
 using Jellyfin.Plugin.MagicCollections.Configuration;
+using MediaBrowser.Common.Plugins;
+using MediaBrowser.Model.Serialization;
 using Xunit;
 
 namespace MagicCollections.Tests;
 
-public sealed class PluginConfigurationTests
+public sealed class PluginConfigurationTests : IDisposable
 {
+    private readonly DirectoryInfo _data = Directory.CreateTempSubdirectory("magic-collections-config-");
+
     [Theory]
     [InlineData("example-trakt-client-id")]
     [InlineData("")]
-    public void Trakt_Client_ID_override_round_trips_separately_from_source_list_URLs(string clientId)
+    public void Saving_settings_persists_clean_Trakt_URLs_separately_from_the_Client_ID_override(string clientId)
     {
-        const string sourceUrl = "https://letterboxd.com/example/list/movies/";
+        const string publicList = "https://app.trakt.tv/users/justin/lists/open-your-eyes";
+        const string unrelated = "https://letterboxd.com/example/list/movies/?sort=rank#list";
+        const string filteredChart = "https://app.trakt.tv/discover/trending?mode=show&genres=comedy";
         using var update = JsonDocument.Parse($$"""
-            { "SourceUrls": ["{{sourceUrl}}"], "TraktClientId": "{{clientId}}", "PosterIcon": false }
+            {
+              "SourceUrls": [
+                "{{unrelated}}",
+                "http://trakt.tv/users/JUSTIN/lists/OPEN-YOUR-EYES/?access_token=query-token#fragment-token",
+                "https://trakt.tv/shows/popular#fragment-token",
+                "{{filteredChart}}"
+              ],
+              "TraktClientId": "{{clientId}}",
+              "PosterIcon": false
+            }
             """);
-        var config = update.Deserialize<PluginConfiguration>(JsonDefaults.Options);
+        var plugin = CreatePlugin();
+        IHasPluginConfiguration configuredPlugin = plugin;
+        var config = Assert.IsType<PluginConfiguration>(update.Deserialize(configuredPlugin.ConfigurationType, JsonDefaults.Options));
+        configuredPlugin.UpdateConfiguration(config);
 
-        // Jellyfin persists plugin configuration with XmlSerializer and serves it as JSON.
-        var xml = new XmlSerializer(typeof(PluginConfiguration));
-        using var stored = new StringWriter();
-        xml.Serialize(stored, config);
-        using var persisted = new StringReader(stored.ToString());
-        var reloaded = Assert.IsType<PluginConfiguration>(xml.Deserialize(persisted));
-        var settings = JsonSerializer.SerializeToElement(reloaded, JsonDefaults.PascalCaseOptions);
+        var expectedUrls = new[] { unrelated, publicList, "https://app.trakt.tv/discover/popular?mode=show", filteredChart };
+        Assert.Equal(expectedUrls, plugin.Configuration.SourceUrls);
+        var xml = File.ReadAllText(plugin.ConfigurationFilePath);
+        Assert.DoesNotContain("query-token", xml, StringComparison.Ordinal);
+        Assert.DoesNotContain("fragment-token", xml, StringComparison.Ordinal);
+        var settings = JsonSerializer.SerializeToElement(CreatePlugin().Configuration, JsonDefaults.PascalCaseOptions);
 
         Assert.Equal(clientId, settings.GetProperty("TraktClientId").GetString());
-        Assert.Equal(sourceUrl, Assert.Single(settings.GetProperty("SourceUrls").EnumerateArray()).GetString());
+        Assert.Equal(expectedUrls, settings.GetProperty("SourceUrls").Deserialize<string[]>());
         Assert.False(settings.GetProperty("PosterIcon").GetBoolean());
+    }
+
+    public void Dispose() => _data.Delete(recursive: true);
+
+    private Plugin CreatePlugin() => new(new PluginTestServices.TestApplicationPaths(_data.FullName), new ConfigurationXmlSerializer());
+
+    private sealed class ConfigurationXmlSerializer : IXmlSerializer
+    {
+        public object DeserializeFromStream(Type type, Stream stream) => new XmlSerializer(type).Deserialize(stream)!;
+        public void SerializeToStream(object obj, Stream stream) => new XmlSerializer(obj.GetType()).Serialize(stream, obj);
+
+        public void SerializeToFile(object obj, string file)
+        {
+            using var stream = File.Create(file);
+            SerializeToStream(obj, stream);
+        }
+
+        public object DeserializeFromFile(Type type, string file)
+        {
+            using var stream = File.OpenRead(file);
+            return DeserializeFromStream(type, stream);
+        }
+
+        public object DeserializeFromBytes(Type type, byte[] buffer) => throw new NotSupportedException();
     }
 }

@@ -37,6 +37,8 @@ async function testPage() {
     const unsupported = 'https://letterboxd.com/film/the-matrix/';
     const uncheckable = 'https://letterboxd.com/example/list/check-fails/';
     const delayed = 'https://example.com/delayed';
+    const pastedTraktList = 'https://trakt.tv/users/Justin/lists/OPEN-YOUR-EYES/?access_token=example-token#example-fragment';
+    const cleanTraktList = 'https://app.trakt.tv/users/justin/lists/open-your-eyes';
     const checked = [];
     let saved = { SourceUrls: [unsupported], PosterBackgroundImage: true, PosterIcon: true, PosterListName: true };
     let saveCount = 0;
@@ -47,9 +49,10 @@ async function testPage() {
         processPluginConfigurationUpdateResult() {}
     };
     window.ApiClient = {
-        async getPluginConfiguration() { return { ...saved }; },
+        async getPluginConfiguration() { return structuredClone(saved); },
         async updatePluginConfiguration(_, config) {
-            saved = config;
+            // Jellyfin persists the normalized configuration, returning no config in the POST response.
+            saved = { ...config, SourceUrls: config.SourceUrls.map(url => url === pastedTraktList ? cleanTraktList : url) };
             saveCount++;
         },
         getUrl(path) { return path; },
@@ -262,6 +265,12 @@ async function testPage() {
         await until(() => saveCount === 6 && saved.TraktClientId === '', 'Saving a blank override should restore the default.');
         await wait(500);
         if (checked.length !== checksBeforeOverride) throw new Error('Editing the override should not trigger URL validation.');
+
+        enter(field(2), pastedTraktList);
+        save.click();
+        await until(() => saveCount === 7 && field(2)?.value === cleanTraktList,
+            'Save should display the canonical Trakt URL returned by Jellyfin, without tokens.');
+        if (field().value !== delayed || invalid(2)) throw new Error('Save should keep the other URL and render the canonical Trakt URL normally.');
         result.textContent = 'PASS';
     } catch (error) {
         result.textContent = error.message;

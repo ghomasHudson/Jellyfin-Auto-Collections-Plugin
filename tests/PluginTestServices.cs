@@ -15,15 +15,15 @@ internal static class PluginTestServices
         return services.BuildServiceProvider();
     }
 
-    private sealed class TestApplicationPaths(string dataPath) : IApplicationPaths
+    internal sealed class TestApplicationPaths(string dataPath) : IApplicationPaths
     {
         public string DataPath => dataPath;
         public string ProgramDataPath => throw new NotSupportedException();
         public string WebPath => throw new NotSupportedException();
         public string ProgramSystemPath => throw new NotSupportedException();
         public string ImageCachePath => throw new NotSupportedException();
-        public string PluginsPath => throw new NotSupportedException();
-        public string PluginConfigurationsPath => throw new NotSupportedException();
+        public string PluginsPath => Path.Combine(DataPath, "plugins");
+        public string PluginConfigurationsPath => Path.Combine(PluginsPath, "configurations");
         public string LogDirectoryPath => throw new NotSupportedException();
         public string ConfigurationDirectoryPath => throw new NotSupportedException();
         public string SystemConfigurationFilePath => throw new NotSupportedException();
