@@ -97,11 +97,14 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
             }
 
             var pagination = ReadPagination(response, page, root.GetArrayLength());
-            firstPage ??= pagination;
-            if (pagination != firstPage)
+            // Live charts can grow or shrink between requests, but the page size must
+            // stay fixed so page offsets (and the rank cap) remain meaningful.
+            if (firstPage is { } initial &&
+                (pagination.Limit != initial.Limit || (chart is null && pagination != initial)))
             {
                 throw new JsonException("Trakt pagination changed between pages.");
             }
+            firstPage ??= pagination;
 
             foreach (var row in root.EnumerateArray())
             {

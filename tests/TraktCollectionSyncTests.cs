@@ -82,6 +82,19 @@ public sealed class TraktCollectionSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task Rejects_a_public_list_whose_total_changes_before_the_read_completes()
+    {
+        _responses.Summary();
+        _responses.Page(ListItems, page: 1, limit: 50, itemCount: 51, Movies(1, 50, wrapped: true));
+        _responses.Page(ListItems, page: 2, limit: 50, itemCount: 52, Movies(51, 2, wrapped: true));
+        LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
+
+        await Assert.ThrowsAsync<SourceListReadException>(() => SyncAsync(ListUrl));
+
+        Assert.Empty(_library.ManagedCollections);
+    }
+
+    [Fact]
     public async Task Accepts_a_valid_empty_public_list_without_creating_a_managed_collection()
     {
         _responses.Summary();
@@ -327,7 +340,46 @@ public sealed class TraktCollectionSyncTests : IDisposable
         Assert.Equal([endpoint + "?page=1&limit=50", endpoint + "?page=2&limit=50", endpoint + "?page=3&limit=50"], _responses.Requests);
     }
 
+    [Theory]
+    [InlineData(197)] // Live response; the item count changed but the page count did not.
+    [InlineData(201)] // The chart grew by a page as well.
+    public async Task Syncs_the_top_100_ranks_when_live_chart_totals_change_between_pages(int secondPageTotal)
+    {
+        const string endpoint = "https://api.trakt.tv/movies/trending";
+        _responses.Page(endpoint, page: 1, limit: 50, itemCount: 189, TrendingMovies(1, 50));
+        _responses.Page(endpoint, page: 2, limit: 50, itemCount: secondPageTotal, TrendingMovies(51, 50));
+        var first = LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
+        var last = LibraryItem(SourceMediaType.Movie, "Tmdb", "100");
+        LibraryItem(SourceMediaType.Movie, "Tmdb", "101");
+
+        await SyncAsync("https://trakt.tv/movies/trending");
+
+        var collection = Assert.Single(_library.ManagedCollections);
+        Assert.Equal(2, collection.Members.Count);
+        Assert.Contains(first, collection.Members);
+        Assert.Contains(last, collection.Members);
+        Assert.Equal([endpoint + "?page=1&limit=50", endpoint + "?page=2&limit=50"], _responses.Requests);
+    }
+
+    [Theory]
+    [InlineData(40, 40)] // Changing the effective limit shifts the page offset.
+    [InlineData(50, 49)] // Even with a stable limit, a truncated page is invalid.
+    public async Task Rejects_invalid_later_chart_pages_without_publishing_a_partial_collection(int limit, int rows)
+    {
+        const string endpoint = "https://api.trakt.tv/movies/trending";
+        _responses.Page(endpoint, page: 1, limit: 50, itemCount: 189, TrendingMovies(1, 50));
+        _responses.Page(endpoint, page: 2, limit, itemCount: 197, TrendingMovies(limit + 1, rows));
+        LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
+
+        await Assert.ThrowsAsync<SourceListReadException>(() => SyncAsync("https://trakt.tv/movies/trending"));
+
+        Assert.Empty(_library.ManagedCollections);
+    }
+
     public void Dispose() => _http.Dispose();
+
+    private static string TrendingMovies(int first, int count) =>
+        JsonSerializer.Serialize(Enumerable.Range(first, count).Select(id => new { watchers = 1, movie = new { ids = new { tmdb = id } } }));
 
     private static string Movies(int first, int count, bool wrapped = false, int? withoutProviderAt = null)
     {
