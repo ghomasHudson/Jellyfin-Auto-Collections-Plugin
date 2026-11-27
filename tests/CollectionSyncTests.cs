@@ -50,6 +50,71 @@ public class CollectionSyncTests
     }
 
     [Fact]
+    public async Task Mirrors_a_rotating_source_list_without_changing_the_collection_or_library()
+    {
+        const string url = "https://lists.example/weekly-picks";
+        var library = new ControlledLibrary();
+        var expired = AddMovie("1");
+        var retained = AddMovie("2");
+        var incoming = AddMovie("3");
+        var manual = AddMovie("4");
+        var handler = new TestHandler(new("Weekly picks", [expired.Identity, retained.Identity]));
+        var sync = new CollectionSync([handler], library);
+        var unmanagedId = await library.CreateAsync("My picks", url);
+        await library.AddMembersAsync(unmanagedId, [expired.Id, manual.Id]);
+
+        await sync.RunAsync([url], Assert.Fail, CancellationToken.None);
+        var collection = Assert.Single(library.ManagedCollections, c => c.Id != unmanagedId);
+        await library.AddMembersAsync(collection.Id, [manual.Id]);
+
+        handler.Source = new("Weekly picks", [retained.Identity, incoming.Identity]);
+        await sync.RunAsync([url], Assert.Fail, CancellationToken.None);
+        await sync.RunAsync([url], Assert.Fail, CancellationToken.None);
+
+        Assert.Equal(2, library.ManagedCollections.Count);
+        Assert.Equal([retained.Id, incoming.Id], collection.Members);
+        Assert.Equal([expired.Id, manual.Id], Assert.Single(library.ManagedCollections, c => c.Id == unmanagedId).Members);
+        Assert.Equal([expired, retained, incoming, manual], library.Media);
+
+        LibraryMedia AddMovie(string tmdbId)
+        {
+            var movie = new LibraryMedia(Guid.NewGuid(), new(SourceMediaType.Movie, new Dictionary<string, string> { ["Tmdb"] = tmdbId }));
+            library.Media.Add(movie);
+            return movie;
+        }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Empties_the_managed_collection_when_no_matches_remain_and_reuses_it_when_they_return(bool emptySource)
+    {
+        const string url = "https://lists.example/festival-picks";
+        var library = new ControlledLibrary();
+        var movie = new LibraryMedia(Guid.NewGuid(), new(SourceMediaType.Movie, new Dictionary<string, string> { ["Tmdb"] = "1" }));
+        library.Media.Add(movie);
+        var original = new SourceList("Festival picks", [movie.Identity]);
+        var handler = new TestHandler(original);
+        var sync = new CollectionSync([handler], library);
+
+        await sync.RunAsync([url], Assert.Fail, CancellationToken.None);
+        var collection = Assert.Single(library.ManagedCollections);
+
+        var unmatched = new MediaIdentity(SourceMediaType.Movie, new Dictionary<string, string> { ["Tmdb"] = "2" });
+        handler.Source = original with { ProviderItems = emptySource ? [] : [unmatched] };
+        await sync.RunAsync([url], Assert.Fail, CancellationToken.None);
+
+        Assert.Equal(collection.Id, Assert.Single(library.ManagedCollections).Id);
+        Assert.Empty(collection.Members);
+
+        handler.Source = original;
+        await sync.RunAsync([url], Assert.Fail, CancellationToken.None);
+
+        Assert.Equal(collection.Id, Assert.Single(library.ManagedCollections).Id);
+        Assert.Equal([movie.Id], collection.Members);
+    }
+
+    [Fact]
     public async Task Names_the_managed_collection_from_the_source_list_URL_when_the_source_list_has_no_name()
     {
         var library = new ControlledLibrary();
@@ -102,8 +167,9 @@ public class CollectionSyncTests
     private sealed class TestHandler(SourceList source) : ISourceListHandler
     {
         public string SourceTag => "Festival Lists";
+        public SourceList Source { get; set; } = source;
 
         public bool Supports(Uri url) => url.Host == "lists.example";
-        public Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken) => Task.FromResult(source);
+        public Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken) => Task.FromResult(Source);
     }
 }

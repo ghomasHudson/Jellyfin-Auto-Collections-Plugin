@@ -384,6 +384,25 @@ public sealed class TraktCollectionSyncTests : IDisposable
         Assert.Empty(_library.ManagedCollections);
     }
 
+    [Fact]
+    public async Task Leaves_chart_membership_unchanged_when_the_chart_shrinks_within_the_rank_cap_mid_read()
+    {
+        const string endpoint = "https://api.trakt.tv/movies/trending";
+        const string url = "https://trakt.tv/movies/trending";
+        _responses.Page(endpoint, page: 1, limit: 50, itemCount: 189, TrendingMovies(1, 50));
+        _responses.Page(endpoint, page: 2, limit: 50, itemCount: 189, TrendingMovies(51, 50));
+        var first = LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
+        var last = LibraryItem(SourceMediaType.Movie, "Tmdb", "100");
+        await SyncAsync(url);
+        var collection = Assert.Single(_library.ManagedCollections);
+
+        _responses.Page(endpoint, page: 2, limit: 50, itemCount: 51, TrendingMovies(51, 1));
+
+        var failure = await Assert.ThrowsAsync<SourceListReadException>(() => SyncAsync(url));
+        Assert.Contains("Invalid Trakt source list data", failure.Message);
+        Assert.Equal([first, last], collection.Members);
+    }
+
     public void Dispose() => _http.Dispose();
 
     [Fact]
@@ -534,6 +553,23 @@ public sealed class TraktCollectionSyncTests : IDisposable
         Assert.DoesNotContain(collection.Tags, tag => tag.Contains("watchlist", StringComparison.OrdinalIgnoreCase));
         Assert.Equal([WatchlistItems + "?page=1&limit=50", WatchlistItems + "?page=2&limit=50"], _responses.Requests);
         Assert.Equal(["Bearer access-0", "Bearer access-0"], _responses.Authorizations);
+    });
+
+    [Fact]
+    public async Task A_confirmed_empty_watchlist_clears_its_collection()
+        => await SyncWithTraktAccount(async (sync, _, _) =>
+    {
+        LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
+        _responses.Page(WatchlistItems, 1, 50, 1, Movies(1, 1, wrapped: true));
+        await sync.RunAsync([WatchlistUrl], Assert.Fail, default);
+        var collection = Assert.Single(_library.ManagedCollections);
+        Assert.Single(collection.Members);
+
+        _responses.Page(WatchlistItems, 1, 50, 0, "[]");
+        await sync.RunAsync([WatchlistUrl], Assert.Fail, default);
+
+        Assert.Equal(collection.Id, Assert.Single(_library.ManagedCollections).Id);
+        Assert.Empty(collection.Members);
     });
 
     [Theory]

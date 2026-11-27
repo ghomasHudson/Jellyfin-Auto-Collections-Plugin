@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Text.Json;
 
 namespace Jellyfin.Plugin.MagicCollections.Sync;
@@ -45,7 +46,13 @@ public sealed class PopularMoviesHandler(HttpClient http, TimeProvider timeProvi
     {
         try
         {
-            var json = await http.GetStringAsync(url).ConfigureAwait(false);
+            using var response = await http.GetAsync(url).ConfigureAwait(false);
+            if (response.StatusCode != HttpStatusCode.OK)
+            {
+                throw new HttpRequestException($"HTTP {(int)response.StatusCode}.", null, response.StatusCode);
+            }
+
+            var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
             return ReadItems(json);
         }
         catch (Exception exception) when (exception is HttpRequestException or IOException)

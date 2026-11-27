@@ -262,7 +262,7 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
 
         await SyncListAsync();
 
-        Assert.Equal([movie, correctedMatch], collection.Members);
+        Assert.Equal([correctedMatch], collection.Members);
         Assert.Equal([ListUrl, Origin + MoviePath, ListUrl, Origin + MoviePath], _responses.Requests);
     }
 

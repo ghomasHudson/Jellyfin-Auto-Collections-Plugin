@@ -169,6 +169,22 @@ public sealed class MdblistCollectionSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task Partial_MDBList_export_does_not_clear_existing_members()
+    {
+        var movie = Guid.NewGuid();
+        _library.Media.Add(new(movie, new(SourceMediaType.Movie, new Dictionary<string, string> { ["Tmdb"] = "577922" })));
+        RecordSourceList(TopMoviesUrl, Fixture("top-movies.html"), """[{"id":577922,"mediatype":"movie"}]""");
+        await SyncSourceListAsync(TopMoviesUrl);
+        var collection = Assert.Single(_library.ManagedCollections);
+
+        _responses.Record(TopMoviesUrl + "/json", () => new(HttpStatusCode.PartialContent) { Content = new StringContent("[]") });
+
+        var failure = await Assert.ThrowsAsync<SourceListReadException>(() => SyncSourceListAsync(TopMoviesUrl));
+        Assert.Contains("HTTP 206", failure.Message);
+        Assert.Equal([movie], collection.Members);
+    }
+
+    [Fact]
     public async Task Still_matches_short_Imdb_IDs_from_an_MDBList_source_list()
     {
         RecordSourceList(TopMoviesUrl, "<html></html>", """[{"imdb_id":"tt1","mediatype":"movie"}]""");

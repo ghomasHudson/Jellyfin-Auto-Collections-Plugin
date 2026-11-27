@@ -24,5 +24,6 @@ public interface ISourceListHandler
     // Equivalent source URLs must share the same URL tag.
     Uri GetCanonicalUrl(Uri url) => url;
 
+    // Return the complete membership within the supported scope, or throw on a failed or incomplete read.
     Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken);
 }

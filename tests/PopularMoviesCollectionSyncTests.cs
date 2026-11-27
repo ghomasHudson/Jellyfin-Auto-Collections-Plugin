@@ -178,6 +178,25 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task Partial_feed_does_not_clear_existing_members_or_cache_an_empty_success()
+    {
+        var movie = AddLibraryMovie("Imdb", "tt22084616");
+        RecordBody(PopularFeed, """[{"imdb_id":"tt22084616"}]""");
+        await SyncAsync(PopularFeed);
+        var collection = Assert.Single(_library.ManagedCollections);
+
+        _clock.Advance(TimeSpan.FromHours(24));
+        _responses.Record(PopularFeed, () => new(HttpStatusCode.PartialContent) { Content = new StringContent("[]") });
+
+        var first = await Assert.ThrowsAsync<SourceListReadException>(() => SyncAsync(PopularFeed));
+        var retry = await Assert.ThrowsAsync<SourceListReadException>(() => SyncAsync(PopularFeed));
+        Assert.Contains("HTTP 206", first.Message);
+        Assert.Equal(first.Message, retry.Message);
+        Assert.Equal([PopularFeed, PopularFeed], _responses.Requests);
+        Assert.Equal([movie], collection.Members);
+    }
+
+    [Fact]
     public async Task Frequent_syncs_reuse_each_source_list_snapshot_for_24_hours_but_still_match_new_library_items()
     {
         const string allFeed = Origin + "/all-movies.json";
@@ -201,7 +220,7 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
 
         _clock.Advance(TimeSpan.FromHours(1));
         await SyncAsync("HTTPS://POPULAR-MOVIES-DATA.STEVENLU.COM/movies.json", PopularFeed, allFeed);
-        Assert.Equal([spiderman, heart], _library.ManagedCollections.Single(c => c.Tags.Contains(PopularFeed)).Members);
+        Assert.Equal([heart], _library.ManagedCollections.Single(c => c.Tags.Contains(PopularFeed)).Members);
         Assert.Equal([PopularFeed, allFeed, PopularFeed], _responses.Requests);
 
         _clock.Advance(TimeSpan.FromHours(1));
@@ -232,7 +251,7 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
         _clock.Advance(TimeSpan.FromHours(1));
         await restarted.RunAsync([PopularFeed], ReportUnexpected, CancellationToken.None);
 
-        Assert.Equal([snapshotMatch, freshMatch], collection.Members);
+        Assert.Equal([freshMatch], collection.Members);
         Assert.Equal([PopularFeed, PopularFeed], _responses.Requests);
     }
 

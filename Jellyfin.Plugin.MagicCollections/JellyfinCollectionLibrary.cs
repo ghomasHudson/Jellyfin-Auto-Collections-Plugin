@@ -65,6 +65,9 @@ internal sealed class JellyfinCollectionLibrary(
     public Task AddMembersAsync(Guid id, IReadOnlyCollection<Guid> memberIds) =>
         collections.AddToCollectionAsync(id, memberIds);
 
+    public Task RemoveMembersAsync(Guid id, IReadOnlyCollection<Guid> memberIds) =>
+        collections.RemoveFromCollectionAsync(id, memberIds);
+
     public Task ReplaceTagAsync(Guid id, string oldTag, string newTag, CancellationToken cancellationToken)
     {
         if (library.GetItemById(id) is not BoxSet collection || !collection.Tags.Contains(oldTag, StringComparer.Ordinal))

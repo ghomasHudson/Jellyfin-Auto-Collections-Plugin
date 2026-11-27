@@ -99,14 +99,21 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             var id = existing?.Id ?? await library.CreateAsync(
                 CollectionName(list, source), ManagedCollectionTag, sourceTag, handler.SourceTag)
                 .ConfigureAwait(false);
-            matches.ExceptWith(existing?.MemberIds ?? []);
-            if (matches.Count != 0)
+            var currentMembers = existing?.MemberIds ?? [];
+            var additions = matches.Except(currentMembers).ToArray();
+            var removals = currentMembers.Except(matches).ToArray();
+            if (additions.Length != 0)
             {
-                await library.AddMembersAsync(id, matches).ConfigureAwait(false);
+                await library.AddMembersAsync(id, additions).ConfigureAwait(false);
+            }
+            if (removals.Length != 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await library.RemoveMembersAsync(id, removals).ConfigureAwait(false);
             }
             verboseLogger?.LogInformation(
-                "Collection membership for {SourceUrl}: {LibraryMatchCount} library matches from {MatchableEntryCount} entries available for matching; added {AddedCount} items (collection created: {Created})",
-                logUrl, libraryMatchCount, matchableEntryCount, matches.Count, existing is null);
+                "Collection membership for {SourceUrl}: {LibraryMatchCount} library matches from {MatchableEntryCount} entries available for matching; added {AddedCount} items, removed {RemovedCount} items (collection created: {Created})",
+                logUrl, libraryMatchCount, matchableEntryCount, additions.Length, removals.Length, existing is null);
 
             if (!string.IsNullOrWhiteSpace(list.Description))
             {

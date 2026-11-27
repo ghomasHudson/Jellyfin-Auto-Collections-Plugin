@@ -32,7 +32,7 @@ The callback uses HTTPS even if your dashboard doesn’t. Only use an HTTP Jelly
 
 ## Import your Trakt watchlist
 
-Connect Trakt, then add `https://app.trakt.tv/users/me/watchlist` under **Source list URLs**. Select **Save** and run **Sync Magic Collections**. The plugin adds matching movies and whole series to a shared **Trakt Watchlist** collection. It does not remove titles that leave your watchlist.
+Connect Trakt, then add `https://app.trakt.tv/users/me/watchlist` under **Source list URLs**. Select **Save** and run **Sync Magic Collections**. The shared **Trakt Watchlist** collection contains matching movies and whole series. When a title leaves your watchlist, the next successful sync removes it from the collection.
 
 The link always uses the connected Trakt account. If you switch accounts, the plugin keeps the previous collection separate. Disconnecting stops future watchlist reads.
 
@@ -40,7 +40,7 @@ The link always uses the connected Trakt account. If you switch accounts, the pl
 
 Connect Trakt and paste a **Discover → Recommended** link under **Source list URLs**. Choose a link for movies, shows, or both. Magic Collections preserves `ratings`, `runtimes`, and `genres` filters, as in [this filtered movie and show link](https://app.trakt.tv/discover/recommended?mode=media&ratings=78-100&runtimes=80-500&genres=action). Links with other filters aren't supported.
 
-The plugin reads up to 100 personalized recommendations for the connected account and adds matching titles to a shared collection. Different filters and different Trakt accounts use separate collections. Sync doesn't remove titles that are no longer recommended.
+The plugin reads up to 100 personalized recommendations for the connected account. The shared collection mirrors the matching titles. Different filters and different Trakt accounts use separate collections.
 
 ## Import a public Trakt smart list
 

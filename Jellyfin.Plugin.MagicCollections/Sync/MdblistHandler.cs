@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Text.Json;
 using AngleSharp.Html.Parser;
 
@@ -43,7 +44,13 @@ public sealed class MdblistHandler(HttpClient http) : ISourceListHandler
     {
         try
         {
-            return await http.GetStringAsync(endpoint, cancellationToken).ConfigureAwait(false);
+            using var response = await http.GetAsync(endpoint, cancellationToken).ConfigureAwait(false);
+            if (response.StatusCode != HttpStatusCode.OK)
+            {
+                throw new HttpRequestException($"HTTP {(int)response.StatusCode}.", null, response.StatusCode);
+            }
+
+            return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is HttpRequestException or IOException)
         {

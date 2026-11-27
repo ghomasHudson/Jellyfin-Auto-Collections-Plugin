@@ -33,6 +33,12 @@ internal sealed class ControlledLibrary : ICollectionLibrary
         return Task.CompletedTask;
     }
 
+    public Task RemoveMembersAsync(Guid id, IReadOnlyCollection<Guid> memberIds)
+    {
+        ManagedCollections.Single(c => c.Id == id).Members.RemoveAll(memberIds.Contains);
+        return Task.CompletedTask;
+    }
+
     public Task ReplaceTagAsync(Guid id, string oldTag, string newTag, CancellationToken cancellationToken)
     {
         var tags = ManagedCollections.Single(c => c.Id == id).Tags;
