@@ -279,7 +279,7 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
             !userSlug.Equals("me", StringComparison.OrdinalIgnoreCase) &&
             Uri.UnescapeDataString(list) is var listSlug && IsSlug(listSlug))
         {
-            var path = $"/users/{userSlug}/lists/{listSlug}";
+            var path = $"/users/{userSlug.ToLowerInvariant()}/lists/{listSlug.ToLowerInvariant()}";
             return new(path, new("https://app.trakt.tv" + path));
         }
 

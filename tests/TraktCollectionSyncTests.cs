@@ -25,7 +25,7 @@ public sealed class TraktCollectionSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task Syncs_a_public_Trakt_list_by_typed_provider_IDs_and_deduplicates_equivalent_links()
+    public async Task Adds_typed_library_matches_to_one_managed_collection_for_equivalent_public_list_links()
     {
         _responses.Summary();
         _responses.Page(ListItems, page: 1, limit: 50, itemCount: 6, """
@@ -48,7 +48,7 @@ public sealed class TraktCollectionSyncTests : IDisposable
         LibraryItem(SourceMediaType.Movie, "Imdb", "tt5555555");
         LibraryItem(SourceMediaType.Movie, "Tmdb", "888"); // A Trakt ID is not a TMDB ID.
 
-        await SyncAsync("https://trakt.tv/users/justin/lists/open-your-eyes/?access_token=not-for-trakt#items", ListUrl);
+        await SyncAsync("https://trakt.tv/users/Justin/lists/OPEN-YOUR-EYES/?access_token=not-for-trakt#items", ListUrl);
 
         var collection = Assert.Single(_library.ManagedCollections);
         Assert.Equal("Open Your Eyes", collection.Name);
