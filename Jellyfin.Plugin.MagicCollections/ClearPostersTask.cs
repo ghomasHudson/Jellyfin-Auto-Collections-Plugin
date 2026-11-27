@@ -20,16 +20,17 @@ public sealed class ClearPostersTask(ILibraryManager library) : IScheduledTask
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var collections = library.GetItemList(new InternalItemsQuery
+        var collectionIds = library.GetItemIds(new InternalItemsQuery
         {
             IncludeItemTypes = [BaseItemKind.BoxSet],
             GroupByPresentationUniqueKey = false,
             Tags = [CollectionSync.ManagedCollectionTag]
         });
-        foreach (var collection in collections.OfType<BoxSet>())
+        foreach (var id in collectionIds)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (collection.Tags.Contains(CollectionSync.ManagedCollectionTag, StringComparer.Ordinal))
+            if (library.GetItemById(id) is BoxSet collection &&
+                collection.Tags.Contains(CollectionSync.ManagedCollectionTag, StringComparer.Ordinal))
             {
                 await collection.DeleteImageAsync(ImageType.Primary, 0).ConfigureAwait(false);
             }

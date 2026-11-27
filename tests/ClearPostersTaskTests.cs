@@ -15,11 +15,13 @@ public sealed class ClearPostersTaskTests
     {
         var poster = new ItemImageInfo { Type = ImageType.Primary, Path = "https://example.com/custom.png" };
         var backdrop = new ItemImageInfo { Type = ImageType.Backdrop, Path = "https://example.com/backdrop.png" };
-        var managed = new TestCollection { Tags = ["Magic Collection"], ImageInfos = [poster, backdrop] };
-        var unmanaged = new TestCollection { Tags = ["Another tag"], ImageInfos = [poster] };
-        var noPoster = new TestCollection { Tags = ["Magic Collection"], ImageInfos = [backdrop] };
+        var managed = new TestCollection { Id = Guid.NewGuid(), Tags = ["Magic Collection"], ImageInfos = [poster, backdrop] };
+        var unmanaged = new TestCollection { Id = Guid.NewGuid(), Tags = ["Another tag"], ImageInfos = [poster] };
+        var noPoster = new TestCollection { Id = Guid.NewGuid(), Tags = ["Magic Collection"], ImageInfos = [backdrop] };
         var library = DispatchProxy.Create<ILibraryManager, TestLibrary>();
-        ((TestLibrary)(object)library).Items = [managed, unmanaged, noPoster];
+        var host = (TestLibrary)(object)library;
+        // The query can return the ID of a collection whose management tag was just removed.
+        host.Items = [managed, unmanaged, noPoster];
         var task = new ClearPostersTask(library);
 
         Assert.Empty(task.GetDefaultTriggers());
@@ -39,7 +41,8 @@ public sealed class ClearPostersTaskTests
 
         protected override object Invoke(MethodInfo? targetMethod, object?[]? args) => targetMethod?.Name switch
         {
-            nameof(ILibraryManager.GetItemList) => Items,
+            nameof(ILibraryManager.GetItemIds) => Items.Select(item => item.Id).ToArray(),
+            nameof(ILibraryManager.GetItemById) => Items.Single(item => item.Id == (Guid)args![0]!),
             _ => throw new NotSupportedException(targetMethod?.Name)
         };
     }
