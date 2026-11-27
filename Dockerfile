@@ -16,6 +16,7 @@ COPY docker/start-jellyfin.sh /opt/magiccollections/
 RUN for movie in \
         "The Matrix (1999) [tmdbid-603]" \
         "Inception (2010) [tmdbid-27205]" \
+        "A Man Vanishes (1967) [tmdbid-85692]" \
         "Tenet (2020) [tmdbid-577922]"; do \
         mkdir -p "/test-media/$movie" && \
         touch "/test-media/$movie/$movie.mp4" || exit 1; \
