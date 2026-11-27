@@ -547,10 +547,8 @@ public class CollectionPosterTests
             {
                 services.AddSingleton(new CollectionImageClient(imageHttp));
             }
-            if (config is not null)
-            {
-                services.AddSingleton<Func<PluginConfiguration>>(() => config);
-            }
+            var testConfig = config ?? new PluginConfiguration();
+            services.AddSingleton<Func<PluginConfiguration>>(() => testConfig);
 
             _services = services.BuildServiceProvider();
 
