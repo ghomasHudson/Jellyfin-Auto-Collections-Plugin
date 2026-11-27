@@ -104,29 +104,8 @@ jobs:
           } >> "$GITHUB_OUTPUT"
       - name: Install poster test fonts
         run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk fonts-dejavu-core
-      - name: Build IMDb helper
-        id: imdb-helper
-        run: |
-          asset=magic-collections-imdb-linux-x64.zip
-          docker build --platform linux/amd64 --target archive \
-            --output "type=local,dest=$RUNNER_TEMP" docker/imdb-helper
-          test -s "$RUNNER_TEMP/$asset"
-          {
-            echo "asset=$asset"
-            echo "size=$(stat -c %s "$RUNNER_TEMP/$asset")"
-            echo "sha256=$(sha256sum "$RUNNER_TEMP/$asset" | cut -d ' ' -f 1)"
-          } >> "$GITHUB_OUTPUT"
-      - name: Smoke test the IMDb bundle offline
-        env:
-          IMDB_HELPER_ASSET: ${{ steps.imdb-helper.outputs.asset }}
-        run: bash docker/imdb-helper/smoke-stock.sh "$RUNNER_TEMP/$IMDB_HELPER_ASSET" --allow-unavailable-sandbox
       - name: Build and test
-        env:
-          IMDB_HELPER_SIZE: ${{ steps.imdb-helper.outputs.size }}
-          IMDB_HELPER_SHA256: ${{ steps.imdb-helper.outputs.sha256 }}
-        run: |
-          dotnet test MagicCollections.slnx -c Release \
-            "-p:ImdbHelperSize=$IMDB_HELPER_SIZE" "-p:ImdbHelperSha256=$IMDB_HELPER_SHA256"
+        run: dotnet test MagicCollections.slnx -c Release
       - name: Package plugin
         env:
           DLL: ${{ steps.package.outputs.dll }}
@@ -155,33 +134,24 @@ jobs:
           VERSION: ${{ steps.package.outputs.version }}
           ABI: ${{ steps.package.outputs.abi }}
           ASSET: ${{ steps.package.outputs.asset }}
-          IMDB_HELPER_ASSET: ${{ steps.imdb-helper.outputs.asset }}
-          IMDB_HELPER_SIZE: ${{ steps.imdb-helper.outputs.size }}
-          IMDB_HELPER_SHA256: ${{ steps.imdb-helper.outputs.sha256 }}
         run: |
           tag="$TAG"
           if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" "$RUNNER_TEMP/$ASSET" "$RUNNER_TEMP/$IMDB_HELPER_ASSET" \
+            gh release create "$tag" "$RUNNER_TEMP/$ASSET" \
               --verify-tag --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
 
           release=$(gh api "repos/$GH_REPO/releases/tags/$tag")
           jq -e '.draft == false and .prerelease == false and (.html_url | length > 0)' <<< "$release" >/dev/null
           timestamp=$(jq -er '.published_at | select(length > 0)' <<< "$release")
-          source_url=$(jq -er --arg asset "$ASSET" --arg helper "$IMDB_HELPER_ASSET" \
-            --argjson size "$IMDB_HELPER_SIZE" --arg digest "sha256:$IMDB_HELPER_SHA256" '
-            def uploaded_asset($name):
-              [.assets[] | select(.name == $name and .state == "uploaded" and .size > 0 and
-                                  (.browser_download_url | length > 0))] |
-              if length == 1 then .[0] else error("Missing release asset: " + $name) end;
-            (uploaded_asset($helper) |
-             if .size == $size and .digest == $digest then true
-             else error("Published IMDb helper does not match the plugin pin") end) as $helper_ok |
-            uploaded_asset($asset).browser_download_url
+          source_url=$(jq -er --arg asset "$ASSET" '
+            [.assets[] | select(.name == $asset and .state == "uploaded" and .size > 0 and
+                                (.browser_download_url | length > 0))] |
+            if length == 1 then .[0].browser_download_url else error("Missing release asset: " + $asset) end
           ' <<< "$release")
 
-          # On a rerun, verify the published bundle has the expected DLLs (including
-          # the built-in helper pin) and licenses. ZIP timestamps may differ.
+          # On a rerun, verify the published ZIP has the expected DLLs and licenses.
+          # ZIP timestamps may differ.
           gh release download "$tag" --pattern "$ASSET" --dir "$RUNNER_TEMP/published"
           python3 - "$RUNNER_TEMP/$ASSET" "$RUNNER_TEMP/published/$ASSET" <<'PY'
           import sys

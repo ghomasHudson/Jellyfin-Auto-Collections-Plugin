@@ -1,4 +1,5 @@
 using Jellyfin.Plugin.MagicCollections.Sync;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace MagicCollections.Tests;
@@ -14,10 +15,11 @@ public class CollectionSyncTests
         Assert.Equal(sourceListUrls, unsupported);
     }
 
-    [Fact]
-    public async Task Unsupported_source_list_URL_does_not_prevent_syncing_a_named_managed_collection_idempotently()
+    [Theory]
+    [InlineData("https://unsupported.example/list")]
+    [InlineData("https://www.imdb.com/list/ls055592025/")]
+    public async Task Unsupported_source_list_URL_does_not_prevent_syncing_a_named_managed_collection_idempotently(string unsupportedUrl)
     {
-        const string unsupportedUrl = "https://unsupported.example/list";
         const string supportedUrl = "https://lists.example/festival-picks";
         var movie = Guid.NewGuid();
         var library = new ControlledLibrary();
@@ -29,7 +31,8 @@ public class CollectionSyncTests
         ]);
         var entry = new MediaIdentity(SourceMediaType.Movie, new Dictionary<string, string> { ["Tmdb"] = "104" });
         var handler = new TestHandler(new("Festival picks", [entry, entry]));
-        var sync = new CollectionSync([handler], library);
+        using var provider = PluginTestServices.BuildProvider();
+        var sync = new CollectionSync([..provider.GetServices<ISourceListHandler>(), handler], library);
         Guid? originalId = null;
 
         for (int i = 0; i < 2; i++)
