@@ -10,13 +10,16 @@
             #magicCollectionsUrls .inputLabel {
                 display: none;
             }
+            #magicCollectionsUrls input[aria-invalid="true"] {
+                border-color: #e53935;
+            }
         </style>
         <div data-role="content">
             <div class="content-primary">
                 <h1>Magic Collections</h1>
                 <form>
                     <h3 id="magicCollectionsUrlsHeading">Source list URLs</h3>
-                    <p class="fieldDescription">Add URLs for list sources. Must be a list source supported by the plugin.</p>
+                    <p class="fieldDescription">Add URLs for supported source lists.</p>
                     <div id="magicCollectionsUrls" role="group" aria-labelledby="magicCollectionsUrlsHeading"></div>
                     <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
                 </form>
@@ -35,8 +38,9 @@
                 const urls = page.querySelector('#magicCollectionsUrls');
                 const template = page.querySelector('#magicCollectionsUrlRow');
 
+                // Jellyfin translates template placeholders in the whole page, including inline scripts.
                 function urlLabel(index) {
-                    return `Source list URL ${index + 1}`;
+                    return 'Source list URL ' + (index + 1);
                 }
 
                 function addUrl(value = '') {
@@ -44,10 +48,40 @@
                     const input = row.querySelector('input');
                     input.setAttribute('aria-label', urlLabel(urls.children.length));
                     input.value = value;
+
+                    let timer;
+                    let inputRevision = 0;
+                    async function checkUrl(url, requestRevision) {
+                        try {
+                            const supported = await ApiClient.ajax({
+                                type: 'POST',
+                                url: ApiClient.getUrl('MagicCollections/SourceListUrl'),
+                                data: JSON.stringify({ Url: url }),
+                                contentType: 'application/json',
+                                dataType: 'json'
+                            });
+                            if (supported === false && requestRevision === inputRevision && row.isConnected) {
+                                input.setAttribute('aria-invalid', 'true');
+                            }
+                        } catch {
+                            // A failed check does not mean the URL is unsupported.
+                        }
+                    }
+
+                    function scheduleUrlCheck(value) {
+                        clearTimeout(timer);
+                        const requestRevision = ++inputRevision;
+                        input.removeAttribute('aria-invalid');
+                        const url = value.trim();
+                        if (!url) return;
+                        timer = setTimeout(() => checkUrl(url, requestRevision), 400);
+                    }
+
                     input.addEventListener('input', () => {
                         if (row === urls.lastElementChild && input.value.trim()) {
                             addUrl();
                         }
+                        scheduleUrlCheck(input.value);
                     });
                     input.addEventListener('blur', () => {
                         if (row !== urls.lastElementChild && !input.value.trim()) {
@@ -77,7 +111,7 @@
                 page.addEventListener('pageshow', () => withConfiguration(config => {
                     renderUrls(config.SourceUrls || []);
                 }));
-                // Keep Save from moving between pressing and releasing the mouse.
+                // Keep a blank row from collapsing on blur before the Save click completes.
                 form.querySelector('button[type="submit"]').addEventListener('mousedown', event => event.preventDefault());
                 form.addEventListener('submit', event => {
                     event.preventDefault();

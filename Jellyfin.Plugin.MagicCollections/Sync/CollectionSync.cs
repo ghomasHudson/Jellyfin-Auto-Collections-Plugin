@@ -20,13 +20,13 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
         foreach (var url in urls)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!Uri.TryCreate(url, UriKind.Absolute, out var source) ||
-                handlers.FirstOrDefault(h => h.Supports(source)) is not { } handler)
+            if (SourceListHandlerLookup.Find(handlers, url) is not { } match)
             {
                 reportUnsupported(url);
                 continue;
             }
 
+            var (source, handler) = match;
             var canonicalUrl = handler.GetCanonicalUrl(source).AbsoluteUri;
             if (!syncedSources.Add(canonicalUrl))
             {
