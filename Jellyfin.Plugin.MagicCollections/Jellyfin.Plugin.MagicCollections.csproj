@@ -30,4 +30,9 @@
     <EmbeddedResource Include="Configuration\configPage.html" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(ImdbHelperSha256)' != '' and '$(ImdbHelperSize)' != ''">
+    <AssemblyMetadata Include="ImdbHelperSha256" Value="$(ImdbHelperSha256)" />
+    <AssemblyMetadata Include="ImdbHelperSize" Value="$(ImdbHelperSize)" />
+  </ItemGroup>
+
 </Project>

@@ -5,6 +5,7 @@ using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.MagicCollections;
 
@@ -27,6 +28,12 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
             new CollectionImageClient(services.GetRequiredService<SourceListHttpClient>()));
         serviceCollection.AddSingleton<ISourceListHandler>(services =>
             new BfiHandler(services.GetRequiredService<SourceListHttpClient>()));
+        serviceCollection.AddSingleton(services =>
+            new ImdbHelperInstaller(services.GetRequiredService<SourceListHttpClient>(),
+                services.GetRequiredService<IApplicationPaths>().DataPath, ImdbHelperRelease.ForCurrentPlatform,
+                services.GetService<ILogger<ImdbHelperInstaller>>()));
+        serviceCollection.AddSingleton<IImdbPageRenderer, BundledImdbPageRenderer>();
+        serviceCollection.AddSingleton<ISourceListHandler, ImdbHandler>();
         serviceCollection.AddSingleton<Func<PluginConfiguration>>(() => Plugin.Instance?.Configuration ?? new PluginConfiguration());
         serviceCollection.AddSingleton<ICollectionLibrary, JellyfinCollectionLibrary>();
         serviceCollection.AddSingleton<CollectionSync>();
