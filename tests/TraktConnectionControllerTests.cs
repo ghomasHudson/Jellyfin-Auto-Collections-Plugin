@@ -15,7 +15,7 @@ namespace MagicCollections.Tests;
 public sealed class TraktConnectionControllerTests : IDisposable
 {
     private readonly string _directory = Path.Combine(Path.GetTempPath(), $"magic-trakt-{Guid.NewGuid():N}");
-    private readonly PluginConfiguration _config = new() { TraktClientId = "development-id" };
+    private readonly PluginConfiguration _config = new();
     private readonly Guid _admin = Guid.NewGuid();
     private readonly TestClock _clock = new();
     private readonly TraktReplies _replies = new();
@@ -23,9 +23,14 @@ public sealed class TraktConnectionControllerTests : IDisposable
 
     public TraktConnectionControllerTests() => _http = new(_replies);
 
-    [Fact]
-    public async Task Only_the_initiating_admin_session_can_exchange_the_Pages_response_once()
+    [Theory]
+    [InlineData("", "ciP9eCYn_QzrN3q_7LABgpl6B-wi5UIdOgvZz3Jg1Fc")]
+    [InlineData("  ", "ciP9eCYn_QzrN3q_7LABgpl6B-wi5UIdOgvZz3Jg1Fc")]
+    [InlineData("  development-id  ", "development-id")]
+    public async Task Only_the_initiating_admin_session_can_exchange_the_Pages_response_once(
+        string configuredClientId, string expectedClientId)
     {
+        _config.TraktClientId = configuredClientId;
         var controller = Dashboard("admin-session");
         var start = Assert.IsType<TraktSignIn>(Assert.IsType<OkObjectResult>(
             await controller.Start(default)).Value);
@@ -34,7 +39,7 @@ public sealed class TraktConnectionControllerTests : IDisposable
         var query = QueryHelpers.ParseQuery(authorize.Query);
         Assert.Equal("S256", query["code_challenge_method"]);
         Assert.Equal("code", query["response_type"]);
-        Assert.Equal("development-id", query["client_id"]);
+        Assert.Equal(expectedClientId, query["client_id"]);
         Assert.Equal("https://ghomashudson.github.io/Jellyfin-Magic-Collections-Plugin/trakt/callback.html", query["redirect_uri"]);
 
         var response = new TraktCallbackResponse("sample-code", query["state"].ToString());
@@ -56,7 +61,8 @@ public sealed class TraktConnectionControllerTests : IDisposable
         Assert.Equal("https://auth.trakt.tv/oauth/token", exchange.Url);
         var body = exchange.Body;
         Assert.Equal("authorization_code", body.GetProperty("grant_type").GetString());
-        Assert.Equal("development-id", body.GetProperty("client_id").GetString());
+        Assert.Equal(expectedClientId, body.GetProperty("client_id").GetString());
+        Assert.All(_replies.Requests, request => Assert.Equal(expectedClientId, request.ClientId));
         Assert.Equal(query["redirect_uri"], body.GetProperty("redirect_uri").GetString());
         Assert.Equal("sample-code", body.GetProperty("code").GetString());
         Assert.False(body.TryGetProperty("client_secret", out _));
@@ -86,6 +92,24 @@ public sealed class TraktConnectionControllerTests : IDisposable
         Assert.IsType<ForbidResult>(await controller.Start(default));
     }
 
+    [Theory]
+    [InlineData(true, "Trakt rejected the one-time code. Start a new connection.")]
+    [InlineData(false, "Trakt account lookup returned HTTP 403.")]
+    public async Task A_failed_exchange_or_account_lookup_reports_which_step_failed_without_echoing_secrets(
+        bool tokenFailure, string expectedError)
+    {
+        _replies.FailTokenExchange = tokenFailure;
+        _replies.FailAccountLookup = !tokenFailure;
+        var controller = Dashboard("admin-session");
+        var start = Assert.IsType<TraktSignIn>(Assert.IsType<OkObjectResult>(await controller.Start(default)).Value);
+        var state = QueryHelpers.ParseQuery(new Uri(start.AuthorizationUrl).Query)["state"].ToString();
+
+        var failure = Assert.IsType<BadRequestObjectResult>(await controller.Complete(new("sample-code", state), default));
+
+        Assert.Equal(expectedError, JsonSerializer.SerializeToElement(failure.Value).GetProperty("Error").GetString());
+        Assert.Equal(tokenFailure ? 1 : 2, _replies.Requests.Count);
+    }
+
     [Fact]
     public async Task Disconnect_removes_persisted_access_even_if_Trakt_does_not_revoke_the_token()
     {
@@ -109,7 +133,6 @@ public sealed class TraktConnectionControllerTests : IDisposable
     [Fact]
     public async Task Incomplete_stored_credentials_do_not_report_a_connected_account()
     {
-        _config.TraktClientId = "";
         Directory.CreateDirectory(Path.Combine(_directory, "magic-collections"));
         await File.WriteAllTextAsync(Path.Combine(_directory, "magic-collections", "trakt-connection.json"), "{}");
         Assert.IsType<BadRequestObjectResult>(await Dashboard("admin-session").Status(default));
@@ -127,15 +150,14 @@ public sealed class TraktConnectionControllerTests : IDisposable
 
         var sync = new CollectionSync([new TraktHandler(_http, () => _config, connection)], new ControlledLibrary());
         var warnings = new List<string>();
-        await sync.RunAsync([], Assert.Fail, default,
-            privateTraktUrls: ["https://trakt.tv/users/list-owner/lists/example"], reportPrivateFailure: warnings.Add);
-        Assert.Contains("Reconnect Trakt", Assert.Single(warnings));
+        await sync.RunAsync(["https://trakt.tv/users/list-owner/lists/example"], Assert.Fail, default, reportPrivateFailure: warnings.Add);
+        Assert.Contains("Connect Trakt", Assert.Single(warnings));
         Assert.Equal("Bearer first-access", _replies.Requests.Last().Authorization);
 
         var status = Assert.IsType<TraktConnectionStatus>(Assert.IsType<OkObjectResult>(
             await Dashboard("admin-session").Status(default)).Value);
         Assert.False(status.Connected);
-        Assert.Contains("Reconnect Trakt", status.Notice);
+        Assert.Contains("Connect Trakt", status.Notice);
     }
 
     private TraktConnection NewConnection() => new(_http, () => _config, _directory, _clock);
@@ -170,7 +192,9 @@ public sealed class TraktConnectionControllerTests : IDisposable
 
     private sealed class TraktReplies : HttpMessageHandler
     {
-        public List<(string Url, JsonElement Body, string? Authorization)> Requests { get; } = [];
+        public List<(string Url, JsonElement Body, string? Authorization, string ClientId)> Requests { get; } = [];
+        public bool FailTokenExchange { get; set; }
+        public bool FailAccountLookup { get; set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
@@ -178,7 +202,19 @@ public sealed class TraktConnectionControllerTests : IDisposable
                 ? JsonSerializer.Deserialize<JsonElement>(await request.Content!.ReadAsStringAsync(token))
                 : default;
             var url = request.RequestUri!.AbsoluteUri;
-            Requests.Add((url, body, request.Headers.Authorization?.ToString()));
+            Assert.Equal("MagicCollections", Assert.Single(request.Headers.UserAgent).Product?.Name);
+            Requests.Add((url, body, request.Headers.Authorization?.ToString(), Assert.Single(request.Headers.GetValues("trakt-api-key"))));
+            if (FailTokenExchange && url == "https://auth.trakt.tv/oauth/token")
+            {
+                return new(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent("""{"error":"invalid_grant","error_description":"Rejected sample-code"}""")
+                };
+            }
+            if (FailAccountLookup && url == "https://api.trakt.tv/users/settings")
+            {
+                return new(HttpStatusCode.Forbidden) { Content = new StringContent("Rejected first-access") };
+            }
             if (url == "https://auth.trakt.tv/oauth/revoke")
             {
                 return new(HttpStatusCode.ServiceUnavailable);

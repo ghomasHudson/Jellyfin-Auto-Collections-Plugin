@@ -14,8 +14,9 @@ public sealed class TraktConnection(HttpClient http, Func<PluginConfiguration> c
 {
     private const string CallbackUrl = "https://ghomashudson.github.io/Jellyfin-Magic-Collections-Plugin/trakt/callback.html";
     private const string AuthOrigin = "https://auth.trakt.tv";
+    private const string BundledClientId = "ciP9eCYn_QzrN3q_7LABgpl6B-wi5UIdOgvZz3Jg1Fc";
     private const string StoreName = "trakt-connection.json";
-    private const string ReconnectNotice = "Trakt rejected the authorization. Reconnect Trakt in the Magic Collections settings.";
+    private const string ReconnectNotice = "Trakt rejected the authorization. Use Connect Trakt in the Magic Collections settings.";
     private static readonly string UserAgent = $"MagicCollections/{typeof(TraktConnection).Assembly.GetName().Version?.ToString(3) ?? "1.0"}";
     private static readonly TimeSpan SignInLifetime = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan RefreshMargin = TimeSpan.FromMinutes(5);
@@ -39,8 +40,12 @@ public sealed class TraktConnection(HttpClient http, Func<PluginConfiguration> c
     internal Task<TraktSignIn> StartAsync(TraktAdminSession session, CancellationToken cancellationToken) =>
         LockedAsync(() =>
         {
-            var clientId = ClientId() ?? throw new TraktConnectionException(
-                "Save a sign-in enabled Trakt Client ID before connecting.");
+            var clientId = ClientId();
+            if (!ValidClientId(clientId))
+            {
+                throw new TraktConnectionException("Invalid Trakt Client ID in plugin settings.");
+            }
+
             var verifier = RandomValue();
             var state = RandomValue();
             _pending = new(session, clientId, verifier, state, clock.GetUtcNow() + SignInLifetime);
@@ -79,7 +84,7 @@ public sealed class TraktConnection(HttpClient http, Func<PluginConfiguration> c
             using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.trakt.tv/users/settings");
             AddApiHeaders(request, pending.ClientId);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
-            var account = (await SendJsonAsync<AccountResponse>(request, cancellationToken).ConfigureAwait(false)).User;
+            var account = (await SendJsonAsync<AccountResponse>(request, "Trakt account lookup", cancellationToken).ConfigureAwait(false)).User;
             if (account?.Ids?.Slug is not { Length: > 0 and <= 256 } slug ||
                 string.IsNullOrWhiteSpace(account.Username) || account.Username.Length > 256)
             {
@@ -111,7 +116,7 @@ public sealed class TraktConnection(HttpClient http, Func<PluginConfiguration> c
             {
                 Content = JsonContent.Create(new { client_id = stored.ClientId, token = stored.AccessToken })
             };
-            request.Headers.Add("trakt-api-key", stored.ClientId);
+            AddClientHeaders(request, stored.ClientId);
             try
             {
                 using var reply = await http.SendAsync(request, CancellationToken.None).ConfigureAwait(false);
@@ -210,11 +215,10 @@ public sealed class TraktConnection(HttpClient http, Func<PluginConfiguration> c
         }
     }
 
-    private string? ClientId()
-    {
-        var id = configuration().TraktClientId?.Trim();
-        return ValidClientId(id) ? id : null;
-    }
+    private string ClientId() => ResolveClientId(configuration().TraktClientId);
+
+    internal static string ResolveClientId(string? configuredId) =>
+        string.IsNullOrWhiteSpace(configuredId) ? BundledClientId : configuredId.Trim();
 
     private static bool ValidClientId(string? id) => id is { Length: > 0 and <= 256 } &&
         id.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
@@ -224,8 +228,9 @@ public sealed class TraktConnection(HttpClient http, Func<PluginConfiguration> c
     private async Task<Tokens> RequestTokensAsync(string clientId, object body, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, AuthOrigin + "/oauth/token") { Content = JsonContent.Create(body) };
-        request.Headers.Add("trakt-api-key", clientId);
-        var tokens = await SendJsonAsync<Tokens>(request, cancellationToken).ConfigureAwait(false);
+        AddClientHeaders(request, clientId);
+        var tokens = await SendJsonAsync<Tokens>(request, "Trakt token exchange", cancellationToken,
+            readOAuthError: true).ConfigureAwait(false);
         if (!ValidToken(tokens.AccessToken) || !ValidToken(tokens.RefreshToken) || tokens.ExpiresIn is <= 0 or > int.MaxValue)
         {
             throw new TraktConnectionException("Trakt did not return a valid token pair.");
@@ -236,26 +241,42 @@ public sealed class TraktConnection(HttpClient http, Func<PluginConfiguration> c
 
     private static bool ValidToken(string? token) => token is { Length: > 0 and <= 8192 } && token.All(c => c is >= '!' and <= '~');
 
-    private async Task<T> SendJsonAsync<T>(HttpRequestMessage request, CancellationToken cancellationToken)
+    private async Task<T> SendJsonAsync<T>(HttpRequestMessage request, string operation, CancellationToken cancellationToken,
+        bool readOAuthError = false)
     {
         try
         {
             using var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
-                var error = response.StatusCode == HttpStatusCode.BadRequest
-                    ? await response.Content.ReadFromJsonAsync<OAuthError>(cancellationToken).ConfigureAwait(false)
-                    : null;
-                throw new TraktConnectionException($"Trakt returned HTTP {(int)response.StatusCode}.", error?.Error == "invalid_grant");
+                if (readOAuthError && response.StatusCode == HttpStatusCode.BadRequest)
+                {
+                    OAuthError? error = null;
+                    try
+                    {
+                        error = await response.Content.ReadFromJsonAsync<OAuthError>(cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (JsonException)
+                    {
+                        // Keep the HTTP status when Trakt returns a non-JSON error page.
+                    }
+
+                    if (error?.Error == "invalid_grant")
+                    {
+                        throw new TraktConnectionException("Trakt rejected the one-time code. Start a new connection.", invalidGrant: true);
+                    }
+                }
+
+                throw new TraktConnectionException($"{operation} returned HTTP {(int)response.StatusCode}.");
             }
 
             return await response.Content.ReadFromJsonAsync<T>(cancellationToken).ConfigureAwait(false)
-                ?? throw new TraktConnectionException("Trakt returned an empty response.");
+                ?? throw new TraktConnectionException($"{operation} returned an empty response.");
         }
         catch (Exception ex) when (ex is HttpRequestException or JsonException or IOException ||
             ex is OperationCanceledException && !cancellationToken.IsCancellationRequested)
         {
-            throw new TraktConnectionException("Could not read a response from Trakt. Try again.");
+            throw new TraktConnectionException($"{operation} failed. Could not read a response from Trakt.");
         }
     }
 
@@ -263,8 +284,14 @@ public sealed class TraktConnection(HttpClient http, Func<PluginConfiguration> c
     {
         request.Content ??= new ByteArrayContent([]);
         request.Content.Headers.ContentType = new("application/json");
-        request.Headers.Add("trakt-api-key", clientId);
+        AddClientHeaders(request, clientId);
         request.Headers.Add("trakt-api-version", "2");
+    }
+
+    private static void AddClientHeaders(HttpRequestMessage request, string clientId)
+    {
+        // Trakt's OAuth endpoint can reject requests without a User-Agent before processing the grant.
+        request.Headers.Add("trakt-api-key", clientId);
         request.Headers.UserAgent.ParseAdd(UserAgent);
     }
 

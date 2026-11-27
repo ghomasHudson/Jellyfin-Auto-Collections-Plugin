@@ -12,21 +12,22 @@ Try [Open Your Eyes](https://app.trakt.tv/users/justin/lists/open-your-eyes) for
 
 ### Optional: use your own Client ID
 
-Leave the override blank to use the included Client ID. For development or a personal setup that needs its own ID, sign in to the [Trakt developer portal](https://developer.trakt.tv/apps). [Link a verified GitHub account](https://developer.trakt.tv/docs/create-an-app), create a Standard app, and copy its **Client ID** into the **Trakt** panel in Magic Collections. A personal app can stay on Development. Keep the ID out of source URLs.
+Leave the override blank to use the included Client ID for public reads and Trakt sign-in. If you want to use your own app, sign in to the [Trakt developer portal](https://developer.trakt.tv/apps). [Link a verified GitHub account](https://developer.trakt.tv/docs/create-an-app) and create a Standard app. To use it for sign-in, enable sign-in and register `https://ghomashudson.github.io/Jellyfin-Magic-Collections-Plugin/trakt/callback.html` as its redirect URI. In Magic Collections, expand **Advanced**, paste the app’s **Client ID** into the override field, and select **Save**. You don’t need a Client Secret.
 
 Magic Collections uses Trakt but is not endorsed or certified by Trakt.
 
 ## Import a private Trakt list
 
-1. Create a Trakt Development app in the [developer portal](https://developer.trakt.tv/apps). Register `https://ghomashudson.github.io/Jellyfin-Magic-Collections-Plugin/trakt/callback.html` as its redirect URI. You do not need a Client Secret.
-2. In Magic Collections, expand **Trakt**. Paste the app’s **Client ID** into the override field and select **Save**.
-3. Select **Connect Trakt**, open the sign-in link, and approve access. On the callback page, select **Copy response**. Paste the response into the same Jellyfin dashboard and select **Finish connecting**.
-4. Check the connected account name. Enter one personal list URL per line under **Private Trakt list URLs to share in Jellyfin** and select **Save**. Then run **Sync Magic Collections**.
+1. In Magic Collections, expand **Trakt** and select **Connect Trakt**. You don’t need to set a Client ID.
+2. Open the sign-in link and approve access. On the callback page, select **Copy response**. Paste the response into the same Jellyfin dashboard and select **Finish connecting**.
+3. Check the connected account name. Add your personal list links under **Source list URLs**, select **Save**, and run **Sync Magic Collections**.
 
-Jellyfin uses one connected account for private lists. The links must belong to that account. Watchlists and smart lists are not part of this setup.
+Public lists still work without sign-in. If Trakt denies access to a personal list, Jellyfin checks who owns it. Jellyfin only retries with the connected account if it owns the list.
+
+Magic Collections doesn't import Trakt watchlists or smart lists.
 
 **The resulting Jellyfin collections are shared.** People with access to your collections may see the imported list names, descriptions, and matching titles. Disconnecting stops future reads but leaves existing collections in place.
 
-If you move a list from public to private, the first successful private sync removes the public URL tag from the existing collection. This doesn't erase the URL from old logs or backups.
+If you make a Trakt list private, the first successful private sync removes the public URL tag from the existing collection. This doesn't erase the URL from old logs or backups.
 
 The callback uses HTTPS even if your dashboard doesn’t. Only use an HTTP Jellyfin dashboard on a trusted network. Jellyfin stores the tokens on its own data volume, so protect access to that volume and its backups.

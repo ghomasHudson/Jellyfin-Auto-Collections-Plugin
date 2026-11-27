@@ -165,7 +165,7 @@ public sealed class TraktCollectionSyncTests : IDisposable
         var error = await Assert.ThrowsAsync<SourceListReadException>(() =>
             SyncAsync("https://trakt.tv/users/justin/lists/open-your-eyes/?access_token=local-token#private-fragment"));
 
-        Assert.Contains(ListUrl, error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(ListUrl, error.Message, StringComparison.Ordinal);
         Assert.Contains("429", error.Message, StringComparison.Ordinal);
         Assert.Contains("90 seconds", error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("override-credential", error.ToString(), StringComparison.Ordinal);
@@ -191,7 +191,7 @@ public sealed class TraktCollectionSyncTests : IDisposable
 
         var error = await Assert.ThrowsAsync<SourceListReadException>(() => SyncAsync(ListUrl));
 
-        Assert.Contains(ListUrl, error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(ListUrl, error.Message, StringComparison.Ordinal);
         Assert.Contains("401", error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("rejected-client-id", error.ToString(), StringComparison.Ordinal);
         Assert.Equal([ListSummary], _responses.Requests);
@@ -205,7 +205,7 @@ public sealed class TraktCollectionSyncTests : IDisposable
 
         var error = await Assert.ThrowsAsync<SourceListReadException>(() => SyncAsync(ListUrl + "?access_token=local-token"));
 
-        Assert.Contains(ListUrl, error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(ListUrl, error.Message, StringComparison.Ordinal);
         Assert.Contains("Trakt Client ID", error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("bad-id", error.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("local-token", error.ToString(), StringComparison.Ordinal);
@@ -245,7 +245,7 @@ public sealed class TraktCollectionSyncTests : IDisposable
 
         var error = await Assert.ThrowsAsync<SourceListReadException>(() => SyncAsync(ListUrl));
 
-        Assert.Contains(ListUrl, error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(ListUrl, error.Message, StringComparison.Ordinal);
         Assert.Contains("Invalid Trakt source list data", error.Message, StringComparison.Ordinal);
         Assert.Empty(_library.ManagedCollections);
     }
@@ -370,21 +370,58 @@ public sealed class TraktCollectionSyncTests : IDisposable
 
     public void Dispose() => _http.Dispose();
 
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.NotFound)]
+    public async Task Connected_account_imports_an_inaccessible_list_from_the_regular_source_URLs(HttpStatusCode denial)
+        => await SyncWithTraktAccount(async (sync, _, _) =>
+    {
+        _responses.DeniedWithoutAccount.Add(ListSummary, denial);
+        _responses.Summary();
+        _responses.Page(ListItems, 1, 50, 1, Movies(1, 1, wrapped: true));
+        var member = LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
+
+        await sync.RunAsync([ListUrl], Assert.Fail, default);
+
+        var collection = Assert.Single(_library.ManagedCollections);
+        Assert.Equal([member], collection.Members);
+        Assert.DoesNotContain(ListUrl, collection.Tags);
+        Assert.Equal([null, "Bearer access-0", "Bearer access-0"], _responses.Authorizations);
+    });
+
+    [Fact]
+    public async Task Public_summary_with_inaccessible_items_retries_the_entire_list_with_the_connected_account()
+        => await SyncWithTraktAccount(async (sync, _, _) =>
+    {
+        var itemsPage = ListItems + "?page=1&limit=50";
+        _responses.DeniedWithoutAccount.Add(itemsPage, HttpStatusCode.NotFound);
+        _responses.Summary();
+        _responses.Page(ListItems, 1, 50, 1, Movies(1, 1, wrapped: true));
+        var member = LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
+
+        await sync.RunAsync([ListUrl], Assert.Fail, default);
+
+        Assert.Equal([member], Assert.Single(_library.ManagedCollections).Members);
+        Assert.Equal([ListSummary, itemsPage, ListSummary, itemsPage], _responses.Requests);
+        Assert.Equal([null, null, "Bearer access-0", "Bearer access-0"], _responses.Authorizations);
+    });
+
     [Fact]
     public async Task A_denied_private_page_leaves_the_existing_collection_unchanged_and_public_sync_continues()
         => await SyncWithTraktAccount(async (sync, _, _) =>
     {
         const string chart = "https://trakt.tv/movies/popular";
         const string chartApi = "https://api.trakt.tv/movies/popular";
+        _responses.DeniedWithoutAccount.Add(ListSummary, HttpStatusCode.NotFound);
         _responses.Summary("""{"name":"Owner's list","description":"Original notes"}""");
         _responses.Page(ListItems, 1, 1, 1, Movies(1, 1, wrapped: true));
         var original = LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
         var newMember = LibraryItem(SourceMediaType.Movie, "Tmdb", "2");
         var warnings = new List<string>();
-        Task Run(params string[] publicUrls) => sync.RunAsync(publicUrls, Assert.Fail, default,
-            privateTraktUrls: [ListUrl], reportPrivateFailure: warnings.Add);
+        Task Run(params string[] urls) => sync.RunAsync(urls, Assert.Fail, default, reportPrivateFailure: warnings.Add);
 
-        await Run();
+        await Run(ListUrl);
         var collection = Assert.Single(_library.ManagedCollections);
         Assert.Equal([original], collection.Members);
         Assert.DoesNotContain(collection.Tags, tag => tag.Contains("open-your-eyes", StringComparison.Ordinal));
@@ -394,7 +431,7 @@ public sealed class TraktCollectionSyncTests : IDisposable
         _responses.Page(ListItems, 1, 1, 2, Movies(2, 1, wrapped: true));
         _responses.Record(ListItems + "?page=2&limit=50", () => new(HttpStatusCode.NotFound));
         _responses.Page(chartApi, 1, 50, 1, Movies(2, 1));
-        await Run(chart, ListUrl);
+        await Run(ListUrl, chart, "https://trakt.tv/users/justin/lists/open-your-eyes/");
 
         Assert.Equal([original], collection.Members);
         Assert.Equal("Original notes", collection.Overview);
@@ -408,55 +445,56 @@ public sealed class TraktCollectionSyncTests : IDisposable
     public async Task Scheduled_reads_refresh_a_token_once_and_reuse_the_rotated_refresh_token()
         => await SyncWithTraktAccount(async (sync, clock, account) =>
     {
+        _responses.DeniedWithoutAccount.Add(ListSummary, HttpStatusCode.NotFound);
         _responses.Summary();
         _responses.Page(ListItems, 1, 50, 0, "[]");
         var warnings = new List<string>();
-        Task Run() => sync.RunAsync([], Assert.Fail, default, privateTraktUrls: [ListUrl], reportPrivateFailure: warnings.Add);
+        Task Run() => sync.RunAsync([ListUrl], Assert.Fail, default, reportPrivateFailure: warnings.Add);
 
         clock.Now += TimeSpan.FromDays(7);
         await Run();
-        Assert.Equal(["Bearer access-1", "Bearer access-1"], _responses.Authorizations);
+        Assert.Equal([null, "Bearer access-1", "Bearer access-1"], _responses.Authorizations);
         clock.Now += TimeSpan.FromDays(7);
         await Run();
         Assert.Equal(["refresh-0", "refresh-1"], account.RefreshRequests);
-        Assert.Equal(["Bearer access-1", "Bearer access-1", "Bearer access-2", "Bearer access-2"], _responses.Authorizations);
+        Assert.Equal([null, "Bearer access-1", "Bearer access-1", null, "Bearer access-2", "Bearer access-2"], _responses.Authorizations);
         Assert.Empty(warnings);
 
         clock.Now += TimeSpan.FromDays(7);
         account.RejectRefresh = true;
         await Run();
         Assert.Contains("Connect Trakt again", Assert.Single(warnings));
-        Assert.Equal(4, _responses.Requests.Count);
+        Assert.Equal(7, _responses.Requests.Count);
         await Run();
         Assert.Equal(["refresh-0", "refresh-1", "refresh-2"], account.RefreshRequests);
     });
 
     [Fact]
-    public async Task Moving_a_Trakt_list_between_settings_keeps_one_collection_and_scrubs_the_private_tag()
+    public async Task A_list_that_becomes_private_keeps_one_collection_and_loses_its_public_tag()
         => await SyncWithTraktAccount(async (sync, _, _) =>
     {
         _responses.Summary();
         _responses.Page(ListItems, 1, 50, 1, Movies(1, 1, wrapped: true));
         var member = LibraryItem(SourceMediaType.Movie, "Tmdb", "1");
-        _responses.ExpectAuthenticatedLists = false;
         await sync.RunAsync([ListUrl], Assert.Fail, default);
         var collection = Assert.Single(_library.ManagedCollections);
         Assert.Contains(ListUrl, collection.Tags);
+        Assert.All(_responses.Authorizations, Assert.Null);
 
-        _responses.ExpectAuthenticatedLists = true;
+        _responses.DeniedWithoutAccount.Add(ListSummary, HttpStatusCode.NotFound);
         _responses.Record(ListSummary, () => new(HttpStatusCode.Forbidden));
         var warnings = new List<string>();
-        await sync.RunAsync([], Assert.Fail, default, privateTraktUrls: [ListUrl], reportPrivateFailure: warnings.Add);
+        await sync.RunAsync([ListUrl], Assert.Fail, default, reportPrivateFailure: warnings.Add);
         Assert.Single(warnings);
         Assert.Contains(ListUrl, collection.Tags);
 
         _responses.Summary();
-        await sync.RunAsync([], Assert.Fail, default, privateTraktUrls: [ListUrl], reportPrivateFailure: Assert.Fail);
+        await sync.RunAsync([ListUrl], Assert.Fail, default, reportPrivateFailure: Assert.Fail);
         Assert.Equal(collection.Id, Assert.Single(_library.ManagedCollections).Id);
         Assert.DoesNotContain(ListUrl, collection.Tags);
         Assert.Equal([member], collection.Members);
 
-        _responses.ExpectAuthenticatedLists = false;
+        _responses.DeniedWithoutAccount.Remove(ListSummary);
         await sync.RunAsync([ListUrl], Assert.Fail, default);
         Assert.Equal(collection.Id, Assert.Single(_library.ManagedCollections).Id);
         Assert.Contains(ListUrl, collection.Tags);
@@ -466,17 +504,19 @@ public sealed class TraktCollectionSyncTests : IDisposable
     public async Task Private_sync_does_not_use_the_connected_token_for_another_owners_list()
         => await SyncWithTraktAccount(async (sync, _, _) =>
     {
+        const string otherOwner = "https://api.trakt.tv/users/someone-else/lists/example/";
+        _responses.DeniedWithoutAccount.Add(otherOwner, HttpStatusCode.NotFound);
         var warnings = new List<string>();
-        await sync.RunAsync([], Assert.Fail, default,
-            privateTraktUrls: ["https://trakt.tv/users/someone-else/lists/example"], reportPrivateFailure: warnings.Add);
-        Assert.Empty(_responses.Requests);
+        await sync.RunAsync(["https://trakt.tv/users/someone-else/lists/example"], Assert.Fail, default, reportPrivateFailure: warnings.Add);
+        Assert.Equal([otherOwner], _responses.Requests);
+        Assert.Equal([null], _responses.Authorizations);
         Assert.Contains("must belong to the connected Trakt account", Assert.Single(warnings));
     });
 
     private async Task SyncWithTraktAccount(Func<CollectionSync, TestClock, TraktTestAccount, Task> run)
     {
         var data = Path.Combine(Path.GetTempPath(), $"magic-trakt-{Guid.NewGuid():N}");
-        var configuration = new PluginConfiguration { TraktClientId = "development-id" };
+        var configuration = new PluginConfiguration();
         using var account = new TraktTestAccount(_responses);
         using var http = new HttpClient(account, disposeHandler: false);
         var clock = new TestClock();
@@ -538,6 +578,7 @@ public sealed class TraktCollectionSyncTests : IDisposable
         public List<string> ClientIds { get; } = [];
         public List<string?> Authorizations { get; } = [];
         public bool ExpectAuthenticatedLists { get; set; }
+        public Dictionary<string, HttpStatusCode> DeniedWithoutAccount { get; } = [];
 
         public void Summary(string json = """{"name":"Open Your Eyes"}""") => Record(ListSummary, () =>
             new(HttpStatusCode.OK) { Content = new StringContent(json) });
@@ -555,12 +596,19 @@ public sealed class TraktCollectionSyncTests : IDisposable
             Assert.Equal("application/json", request.Content?.Headers.ContentType?.MediaType);
             Assert.NotEmpty(request.Headers.UserAgent);
             Assert.Equal(["2"], request.Headers.GetValues("trakt-api-version"));
-            Assert.Equal(ExpectAuthenticatedLists && request.RequestUri.AbsolutePath.StartsWith("/users/", StringComparison.Ordinal),
-                request.Headers.Contains("Authorization"));
+            if (request.Headers.Authorization is not null)
+            {
+                Assert.True(ExpectAuthenticatedLists && request.RequestUri.AbsolutePath.StartsWith("/users/", StringComparison.Ordinal));
+            }
             Authorizations.Add(request.Headers.Authorization?.ToString());
             ClientIds.Add(Assert.Single(request.Headers.GetValues("trakt-api-key")));
             var endpoint = request.RequestUri.AbsoluteUri;
             Requests.Add(endpoint);
+            if (request.Headers.Authorization is null && DeniedWithoutAccount.TryGetValue(endpoint, out var denial))
+            {
+                return Task.FromResult(new HttpResponseMessage(denial));
+            }
+
             return Task.FromResult(_responses.TryGetValue(endpoint, out var respond)
                 ? respond()
                 : throw new InvalidOperationException($"No Trakt recording for {endpoint}"));
@@ -580,6 +628,7 @@ public sealed class TraktCollectionSyncTests : IDisposable
         {
             if (request.RequestUri!.AbsoluteUri == "https://auth.trakt.tv/oauth/token")
             {
+                Assert.Equal("MagicCollections", Assert.Single(request.Headers.UserAgent).Product?.Name);
                 using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
                 Assert.False(body.RootElement.TryGetProperty("client_secret", out _));
                 if (body.RootElement.GetProperty("grant_type").GetString() == "refresh_token")

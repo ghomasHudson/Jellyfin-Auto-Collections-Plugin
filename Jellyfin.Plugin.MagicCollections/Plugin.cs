@@ -43,11 +43,6 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         if (configuration is PluginConfiguration settings)
         {
             settings.SourceUrls = (settings.SourceUrls ?? []).Select(TraktHandler.CanonicalizeConfiguredUrl).ToArray();
-            settings.PrivateTraktUrls = (settings.PrivateTraktUrls ?? [])
-                .Select(TraktHandler.CanonicalizePersonalList)
-                .OfType<string>()
-                .Distinct(StringComparer.Ordinal)
-                .ToArray();
         }
 
         base.UpdateConfiguration(configuration);

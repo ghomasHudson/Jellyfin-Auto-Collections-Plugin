@@ -10,7 +10,7 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
 
     public async Task RunAsync(IEnumerable<string> urls, Action<string> reportUnsupported,
         CancellationToken cancellationToken, ILogger? verboseLogger = null,
-        IEnumerable<string>? privateTraktUrls = null, Action<string>? reportPrivateFailure = null)
+        Action<string>? reportPrivateFailure = null)
     {
         // Snapshot once per run. Build each index only if a source uses it.
         var media = new Lazy<LibraryMedia[]>(() => library.GetMedia().ToArray());
@@ -23,40 +23,24 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
                 .ToLookup(item => item.MovieTitleYear!.Value.MatchKey(), item => item.Id));
         var syncedSources = new HashSet<string>(StringComparer.Ordinal);
 
-        var privateSources = (privateTraktUrls ?? [])
-            .Select(TraktHandler.CanonicalizePersonalList)
-            .OfType<string>()
-            .ToHashSet(StringComparer.Ordinal);
-        foreach (var (url, isPrivate) in privateSources.Select(url => (url, true)).Concat(urls.Select(url => (url, false))))
+        foreach (var url in urls)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var candidatesForSource = isPrivate ? handlers.OfType<TraktHandler>() : handlers;
-            if (SourceListHandlerLookup.Find(candidatesForSource, url) is not { } match)
+            if (SourceListHandlerLookup.Find(handlers, url) is not { } match)
             {
-                if (isPrivate)
-                {
-                    reportPrivateFailure?.Invoke("No Trakt list handler is available.");
-                }
-                else
-                {
-                    reportUnsupported(url);
-                }
+                reportUnsupported(url);
                 continue;
             }
 
             var (source, handler) = match;
             var canonicalSource = handler.GetCanonicalUrl(source);
             var canonicalUrl = canonicalSource.AbsoluteUri;
-            if (!isPrivate && privateSources.Contains(canonicalUrl))
-            {
-                continue;
-            }
-
-            var sourceTag = isPrivate ? PrivateTraktTag(canonicalUrl) : canonicalUrl;
-            // Leave credentials, query strings and fragments out of the verbose logs.
-            var logUrl = isPrivate ? sourceTag : verboseLogger is null ? null :
-                canonicalSource.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped);
-            if (!syncedSources.Add(sourceTag))
+            // A personal list may be private; don't wait for the API to find out before redacting it.
+            var opaqueTag = handler is TraktHandler trakt && trakt.IsPersonalList(canonicalSource)
+                ? PrivateTraktTag(canonicalUrl) : null;
+            var logUrl = opaqueTag ?? (verboseLogger is null ? null :
+                canonicalSource.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped));
+            if (!syncedSources.Add(canonicalUrl))
             {
                 verboseLogger?.LogInformation("Skipping duplicate source list {SourceUrl}", logUrl);
                 continue;
@@ -66,13 +50,11 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             SourceList list;
             try
             {
-                list = isPrivate
-                    ? await ((TraktHandler)handler).ReadPrivateAsync(source, cancellationToken).ConfigureAwait(false)
-                    : await handler.ReadAsync(source, cancellationToken).ConfigureAwait(false);
+                list = await handler.ReadAsync(source, cancellationToken).ConfigureAwait(false);
             }
-            catch (SourceListReadException ex) when (isPrivate)
+            catch (SourceListReadException ex) when (ex.IsPrivateTraktFailure && reportPrivateFailure is not null)
             {
-                reportPrivateFailure?.Invoke($"{sourceTag}: {ex.Reason}");
+                reportPrivateFailure($"{opaqueTag}: {ex.Reason}");
                 continue;
             }
             var matches = list.ProviderItems.SelectMany(Keys)
@@ -89,12 +71,13 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             cancellationToken.ThrowIfCancellationRequested();
             var matchableEntryCount = list.ProviderItems.Count + list.MoviesByTitleYear.Count;
             var libraryMatchCount = matches.Count;
+            var sourceTag = list.ReadWithTraktAccount ? opaqueTag! : canonicalUrl;
             var existing = library.FindByTags(sourceTag, ManagedCollectionTag);
-            if (existing is null && (isPrivate || handler is TraktHandler && TraktHandler.CanonicalizePersonalList(canonicalUrl) is not null))
+            if (existing is null && opaqueTag is not null)
             {
                 // Changing the source's access mode must not create a second collection.
                 // Only migrate after successfully reading the entire list.
-                var previousTag = isPrivate ? canonicalUrl : PrivateTraktTag(canonicalUrl);
+                var previousTag = list.ReadWithTraktAccount ? canonicalUrl : opaqueTag;
                 if (library.FindByTags(previousTag, ManagedCollectionTag) is { } previous)
                 {
                     await library.ReplaceTagAsync(previous.Id, previousTag, sourceTag, cancellationToken).ConfigureAwait(false);

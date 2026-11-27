@@ -10,7 +10,6 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
 {
     private static readonly Uri ApiOrigin = new("https://api.trakt.tv");
     private static readonly Uri TraktFavicon = new("https://app.trakt.tv/pwa/android/icon_192.png");
-    private const string BundledClientId = "ciP9eCYn_QzrN3q_7LABgpl6B-wi5UIdOgvZz3Jg1Fc";
     private const int PageSize = 50;
     private const int ChartEntryCap = 100;
 
@@ -25,24 +24,32 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
             ? source.CanonicalUrl.AbsoluteUri
             : url;
 
-    internal static string? CanonicalizePersonalList(string? url) =>
-        Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri) &&
-        ParseSource(uri) is { Owner: not null } source ? source.CanonicalUrl.AbsoluteUri : null;
+    internal bool IsPersonalList(Uri url) => ParseSource(url)?.Owner is not null;
 
-    public Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken) =>
-        ReadSourceAsync(RequireSource(url), authenticated: false, cancellationToken);
+    public async Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken)
+    {
+        var source = RequireSource(url);
+        try
+        {
+            return await ReadSourceAsync(source, authenticated: false, cancellationToken).ConfigureAwait(false);
+        }
+        catch (SourceListReadException ex) when (source.Owner is not null &&
+            ex.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+        {
+            if (connection is null)
+            {
+                throw SourceError(source, $"{ex.Reason} Connect Trakt in the Magic Collections settings.", authenticated: true);
+            }
 
-    internal Task<SourceList> ReadPrivateAsync(Uri url, CancellationToken cancellationToken) =>
-        ReadSourceAsync(RequireSource(url), authenticated: true, cancellationToken);
+            // Retry the whole read so the summary and every page use the same access mode.
+            return await ReadSourceAsync(source, authenticated: true, cancellationToken).ConfigureAwait(false);
+        }
+    }
 
     private async Task<SourceList> ReadSourceAsync(Source source, bool authenticated, CancellationToken cancellationToken)
     {
-        var clientId = configuration().TraktClientId?.Trim();
-        if (string.IsNullOrEmpty(clientId))
-        {
-            clientId = BundledClientId;
-        }
-        else if (clientId.Any(c => c is < '!' or > '~'))
+        var clientId = TraktConnection.ResolveClientId(configuration().TraktClientId);
+        if (clientId.Any(c => c is < '!' or > '~'))
         {
             throw ReadError("Invalid Trakt Client ID in plugin settings.");
         }
@@ -53,7 +60,11 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
                 ? (chart.Name, null)
                 : await ReadSummaryAsync(source, clientId, authenticated, cancellationToken).ConfigureAwait(false);
             var items = await ReadPagesAsync(source, clientId, authenticated, cancellationToken).ConfigureAwait(false);
-            return new(name, items, description) { FaviconUrls = [TraktFavicon] };
+            return new(name, items, description)
+            {
+                FaviconUrls = [TraktFavicon],
+                ReadWithTraktAccount = authenticated
+            };
         }
         catch (JsonException)
         {
@@ -72,11 +83,15 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
             throw ReadError("Trakt API request timed out.");
         }
 
-        SourceListReadException ReadError(string reason) => new(ErrorSource(source, authenticated), reason);
+        SourceListReadException ReadError(string reason) => SourceError(source, reason, authenticated);
     }
 
-    private static Uri ErrorSource(Source source, bool authenticated) =>
-        authenticated ? ApiOrigin : source.CanonicalUrl;
+    private static SourceListReadException SourceError(Source source, string reason, bool authenticated,
+        HttpStatusCode? status = null) => new(source.Owner is null ? source.CanonicalUrl : ApiOrigin, reason)
+        {
+            StatusCode = status,
+            IsPrivateTraktFailure = authenticated
+        };
 
     private async Task<(string? Name, string? Description)> ReadSummaryAsync(Source source, string clientId, bool authenticated,
         CancellationToken cancellationToken)
@@ -95,6 +110,12 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
             name.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(name.GetString()))
         {
             throw new JsonException("Expected a Trakt list name.");
+        }
+
+        if (!authenticated && data.RootElement.TryGetProperty("privacy", out var privacy) &&
+            privacy.ValueKind == JsonValueKind.String && privacy.GetString() is "private" or "friends")
+        {
+            throw SourceError(source, "This Trakt list requires sign-in.", authenticated, HttpStatusCode.Forbidden);
         }
 
         var description = data.RootElement.TryGetProperty("description", out var overview) &&
@@ -223,7 +244,7 @@ public sealed class TraktHandler(HttpClient http, Func<PluginConfiguration> conf
                 };
             }
 
-            throw new SourceListReadException(ErrorSource(source, authenticated), reason);
+            throw SourceError(source, reason, authenticated, response.StatusCode);
         }
     }
 

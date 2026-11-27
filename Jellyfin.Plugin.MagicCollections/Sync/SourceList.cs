@@ -10,6 +10,7 @@ public sealed record SourceList(string? Name, IReadOnlyList<MediaIdentity> Provi
     public IReadOnlyList<MovieTitleYear> MoviesByTitleYear { get; init; } = [];
     public IReadOnlyList<Uri> FaviconUrls { get; init; } = [];
     public Uri? ImageUrl { get; init; }
+    internal bool ReadWithTraktAccount { get; init; }
 }
 
 public interface ISourceListHandler

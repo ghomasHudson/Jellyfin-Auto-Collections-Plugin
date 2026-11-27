@@ -22,7 +22,7 @@ public sealed class SyncTask(CollectionSync sync, ILogger<SyncTask> logger) : IS
         var config = plugin.Configuration;
         await sync.RunAsync(config.SourceUrls,
             url => logger.LogWarning("Unsupported source list URL: {SourceUrl}", UrlForLog(url)),
-            cancellationToken, config.VerboseLogging ? logger : null, config.PrivateTraktUrls,
+            cancellationToken, config.VerboseLogging ? logger : null,
             error => logger.LogWarning("Private Trakt list skipped: {Reason}", error)).ConfigureAwait(false);
         progress.Report(100);
     }

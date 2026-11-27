@@ -45,7 +45,9 @@ async function testPage() {
     let saveCount = 0;
     let pendingCheck;
     let connected = false;
+    let expired = false;
     let submittedResponse;
+    let rejectTraktResponse = true;
     window.Dashboard = {
         showLoadingMsg() {},
         hideLoadingMsg() {},
@@ -60,12 +62,20 @@ async function testPage() {
         },
         getUrl(path) { return path; },
         async ajax(request) {
-            if (request.url === 'MagicCollections/Trakt/Status') return { Connected: connected, Account: connected ? 'Example Owner' : null };
+            if (request.url === 'MagicCollections/Trakt/Status') {
+                if (expired) return { Connected: false, Account: 'Example Owner', Notice: 'Trakt authorization expired.' };
+                return { Connected: connected, Account: connected ? 'Example Owner' : null };
+            }
             if (request.url === 'MagicCollections/Trakt/Start') {
+                if (saved.TraktClientId || saveCount !== 7) throw new Error('Connecting should not require a Client ID or another save.');
                 return { AuthorizationUrl: 'https://auth.trakt.tv/oauth/authorize?state=test-state' };
             }
             if (request.url === 'MagicCollections/Trakt/Complete') {
                 submittedResponse = JSON.parse(request.data);
+                if (rejectTraktResponse) {
+                    rejectTraktResponse = false;
+                    throw Response.json({ Error: 'Trakt rejected the one-time code. Start a new connection.' }, { status: 400 });
+                }
                 connected = true;
                 return { Connected: connected, Account: 'Example Owner' };
             }
@@ -107,7 +117,7 @@ async function testPage() {
         const posterOptions = [...form.querySelectorAll('#magicCollectionsPoster input[type="checkbox"]')];
         const traktToggle = [...form.querySelectorAll('summary')].find(summary => summary.textContent.trim() === 'Trakt');
         const traktClientId = form.elements.TraktClientId;
-        const debugToggle = [...form.querySelectorAll('summary')].find(summary => summary.textContent.trim() === 'Debug');
+        const advancedToggle = [...form.querySelectorAll('summary')].find(summary => summary.textContent.trim() === 'Advanced');
         const verboseLogging = form.elements.VerboseLogging;
         const visiblePosterOptions = () => posterOptions.filter(option => option.checkVisibility()).length;
         const field = (index = 1) => form.querySelector('input[aria-label="Source list URL ' + index + '"]');
@@ -121,24 +131,23 @@ async function testPage() {
         if (posterToggle?.textContent.trim() !== 'Poster' || visiblePosterOptions() !== 0) {
             throw new Error('The Poster section should start collapsed.');
         }
-        if (!traktToggle || !traktClientId || traktClientId.checkVisibility()) {
-            throw new Error('The Trakt section should start collapsed and hide the Client ID field.');
+        if (!traktToggle || traktToggle.parentElement.open) {
+            throw new Error('The Trakt section should start collapsed.');
         }
         traktToggle.click();
         const traktPanel = traktToggle.parentElement;
-        if (!traktPanel.innerText.includes("Public lists and charts don't require a Trakt account or app") ||
-                !traktPanel.innerText.includes('Magic Collections uses Trakt but is not endorsed or certified by Trakt') ||
-                !traktClientId.checkVisibility() ||
-                !traktPanel.innerText.includes('Paste only the Client ID, or leave blank to use the bundled ID.')) {
-            throw new Error('Expanding Trakt should show the setup guidance, notice, and optional Client ID field.');
+        if (!traktPanel.open ||
+                !traktPanel.innerText.includes("Public lists and charts don't require a Trakt account") ||
+                !traktPanel.innerText.includes('Magic Collections uses Trakt but is not endorsed or certified by Trakt')) {
+            throw new Error('Expanding Trakt should show the setup guidance and notice.');
         }
+        if (traktPanel.contains(traktClientId)) throw new Error('The Client ID field should not be in the Trakt panel.');
         traktToggle.click();
-        if (traktClientId.checkVisibility()) throw new Error('Collapsing Trakt should hide the Client ID field again.');
         if (verboseLogging?.type !== 'checkbox' || verboseLogging.checked) {
             throw new Error('Verbose logging should be an unchecked checkbox when absent from saved settings.');
         }
-        if (!debugToggle || verboseLogging.checkVisibility()) {
-            throw new Error('The Debug section should start collapsed and hide verbose logging.');
+        if (!advancedToggle || !traktClientId || verboseLogging.checkVisibility() || traktClientId.checkVisibility()) {
+            throw new Error('Advanced should start collapsed and hide verbose logging and the Client ID override.');
         }
         await wait(500);
         if (field().value !== unsupported || checked.length || invalid() || borderColor() === red) {
@@ -184,18 +193,21 @@ async function testPage() {
         form.elements.PosterIcon.click();
         posterToggle.click();
         if (visiblePosterOptions() !== 0) throw new Error('Collapsing Poster should hide the options again.');
-        debugToggle.click();
-        if (!verboseLogging.checkVisibility()) throw new Error('Expanding Debug should show verbose logging.');
-        const debugLabel = verboseLogging.labels[0];
-        if (debugToggle.parentElement.textContent.trim().replace(/\s+/g, ' ') !== 'Debug Enable verbose logging' ||
-                !debugLabel?.checkVisibility()) {
-            throw new Error('Debug should show a visible checkbox label without explanatory text.');
+        advancedToggle.click();
+        const advancedPanel = advancedToggle.parentElement;
+        const loggingLabel = verboseLogging.labels[0];
+        if (!loggingLabel?.checkVisibility() || !advancedPanel.contains(verboseLogging) ||
+                !traktClientId.checkVisibility() || !advancedPanel.contains(traktClientId) ||
+                !advancedPanel.innerText.includes('Paste only the Client ID, or leave blank to use the bundled ID.')) {
+            throw new Error('Expanding Advanced should show verbose logging and the optional Client ID field.');
         }
-        const debugGap = debugLabel.getBoundingClientRect().top - debugToggle.getBoundingClientRect().bottom;
-        if (debugGap < 8) throw new Error('The Debug checkbox needs space below the section heading.');
-        debugLabel.click();
-        debugToggle.click();
-        if (verboseLogging.checkVisibility()) throw new Error('Collapsing Debug should hide verbose logging again.');
+        const loggingGap = loggingLabel.getBoundingClientRect().top - advancedToggle.getBoundingClientRect().bottom;
+        if (loggingGap < 8) throw new Error('The verbose logging checkbox needs space below the section heading.');
+        loggingLabel.click();
+        advancedToggle.click();
+        if (verboseLogging.checkVisibility() || traktClientId.checkVisibility()) {
+            throw new Error('Collapsing Advanced should hide both options again.');
+        }
         save.click();
         await until(() => saveCount === 1 && saved.SourceUrls.length === 1 && saved.SourceUrls[0] === unsupported, 'Save did not keep the unsupported URL.');
         if (saved.PosterIcon !== false || saved.PosterBackgroundImage !== true || saved.PosterListName !== true) {
@@ -245,7 +257,7 @@ async function testPage() {
         if (field(2)?.value !== '' || field(3)) throw new Error('Clearing an input and leaving it should remove the row.');
         posterToggle.click();
         form.elements.PosterIcon.click();
-        debugToggle.click();
+        advancedToggle.click();
         verboseLogging.click();
         document.querySelector('#magicCollectionsPage').dispatchEvent(new Event('pageshow'));
         await until(() => !form.elements.PosterIcon.checked && verboseLogging.checked, 'Reloading did not restore the saved checkbox states.');
@@ -253,7 +265,6 @@ async function testPage() {
         save.click();
         await until(() => saveCount === 4 && saved.VerboseLogging === false, 'Save did not disable verbose logging.');
 
-        traktToggle.click();
         const clientId = 'example-trakt-client-id';
         const checksBeforeOverride = checked.length;
         if (traktClientId.value !== '') throw new Error('The override should be blank when unset.');
@@ -271,6 +282,8 @@ async function testPage() {
         await until(() => saveCount === 6 && saved.TraktClientId === '', 'Saving a blank override should restore the default.');
         await wait(500);
         if (checked.length !== checksBeforeOverride) throw new Error('Editing the override should not trigger URL validation.');
+        advancedToggle.click();
+        traktToggle.click();
 
         enter(field(2), pastedTraktList);
         save.click();
@@ -281,31 +294,50 @@ async function testPage() {
         const disconnect = traktPanel.querySelector('button[id="magicTraktDisconnect"]');
         const status = traktPanel.querySelector('#magicTraktStatus');
         if (!connect || !disconnect || !status) throw new Error('The Trakt panel is missing its connection controls.');
-        if (disconnect.checkVisibility()) throw new Error('Disconnect should be hidden before connecting.');
-        enter(traktClientId, clientId);
-        save.click();
-        await until(() => saveCount === 8 && !connect.disabled, 'Saving the sign-in Client ID did not finish.');
+        if (!connect.checkVisibility() || disconnect.checkVisibility()) throw new Error('Only Connect Trakt should appear before connecting.');
+        await until(() => !connect.disabled, 'Connect Trakt stayed disabled.');
         connect.click();
         const openTrakt = traktPanel.querySelector('#magicTraktOpen');
         await until(() => openTrakt?.checkVisibility() && openTrakt.href.startsWith('https://auth.trakt.tv/'),
-            'Connect did not display the Trakt authorization link.');
+            'Connect did not display the Trakt authorization link with a blank Client ID.');
         const response = traktPanel.querySelector('#magicTraktResponse');
         const finish = traktPanel.querySelector('#magicTraktFinish');
+        enter(response, '{"code":"rejected-code","state":"test-state"}');
+        finish.click();
+        await until(() => status.textContent === 'Trakt rejected the one-time code. Start a new connection.',
+            'Finish should show the Jellyfin error instead of a generic message.');
+        if (response.value || openTrakt.checkVisibility()) throw new Error('Finish should clear a rejected one-time response.');
+        connect.click();
+        await until(() => openTrakt.checkVisibility(), 'Connect should let the user start a new sign-in after an error.');
         enter(response, '{"code":"one-time-code","state":"test-state"}');
         finish.click();
         await until(() => status.textContent.includes('Example Owner'), 'Connected account name was not shown.');
+        if (connect.checkVisibility() || !disconnect.checkVisibility()) {
+            throw new Error('Only Disconnect Trakt should appear while connected.');
+        }
         if (submittedResponse?.Code !== 'one-time-code' || submittedResponse.State !== 'test-state' ||
                 response.value || openTrakt.checkVisibility()) {
             throw new Error('The one-time response was not submitted and cleared.');
         }
-        enter(form.elements.PrivateTraktLists, cleanTraktList);
+        if (form.elements.PrivateTraktLists) throw new Error('Private Trakt lists should not have a second URL field.');
+        const personalList = 'https://app.trakt.tv/users/example/lists/private-films';
+        enter(field(2), personalList);
         save.click();
-        await until(() => saveCount === 9 && saved.PrivateTraktUrls?.[0] === cleanTraktList && !disconnect.disabled,
-            'Private list selection was not saved separately.');
+        await until(() => saveCount === 8 && saved.SourceUrls.includes(personalList) && !disconnect.disabled,
+            'The private list was not saved from the ordinary URL field.');
         if (JSON.stringify(saved).includes('one-time-code')) throw new Error('The OAuth response leaked into plugin settings.');
         window.confirm = () => true;
         disconnect.click();
         await until(() => status.textContent.includes('Not connected'), 'Disconnect did not update the account status.');
+        if (!connect.checkVisibility() || disconnect.checkVisibility() || !saved.SourceUrls.includes(personalList)) {
+            throw new Error('Disconnect should restore Connect Trakt and keep the saved list URL.');
+        }
+        expired = true;
+        document.querySelector('#magicCollectionsPage').dispatchEvent(new Event('pageshow'));
+        await until(() => status.textContent.includes('expired'), 'The expired connection status did not load.');
+        if (!connect.checkVisibility() || disconnect.checkVisibility() || connect.textContent.trim() !== 'Connect Trakt') {
+            throw new Error('An expired connection should show only Connect Trakt, even with a stored account.');
+        }
         result.textContent = 'PASS';
     } catch (error) {
         result.textContent = error.message;
