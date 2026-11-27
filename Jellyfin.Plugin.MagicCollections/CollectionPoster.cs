@@ -25,17 +25,13 @@ internal static class CollectionPoster
         using var white = SKColorFilter.CreateBlendMode(SKColors.White, SKBlendMode.SrcIn);
         using var paint = new SKPaint { Color = SKColors.White, IsAntialias = true, ColorFilter = white };
 
-        canvas.Clear(SKColors.Black);
-        if (background is not null)
+        if (background is null)
         {
-            // Fill the portrait canvas without stretching, keeping the image centered.
-            var fillScale = Math.Max((float)width / background.Width, (float)height / background.Height);
-            var imageWidth = background.Width * fillScale;
-            var imageHeight = background.Height * fillScale;
-            var bounds = SKRect.Create((width - imageWidth) / 2, (height - imageHeight) / 2, imageWidth, imageHeight);
-            using var image = SKImage.FromBitmap(background);
-            canvas.DrawImage(image, bounds, new SKSamplingOptions(SKFilterMode.Linear));
-            canvas.DrawColor(new SKColor(0, 0, 0, 160), SKBlendMode.SrcOver);
+            canvas.Clear(SKColors.Black);
+        }
+        else
+        {
+            DrawBackground(canvas, bitmap, background);
         }
 
         var lines = WrapTitle(title, text, maxTextWidth).ToArray();
@@ -85,6 +81,55 @@ internal static class CollectionPoster
 
         using var png = bitmap.Encode(SKEncodedImageFormat.Png, 100);
         return new MemoryStream(png.ToArray(), writable: false);
+    }
+
+    private static void DrawBackground(SKCanvas canvas, SKBitmap poster, SKBitmap background)
+    {
+        // Fill the portrait canvas without stretching, keeping the image centered.
+        var fillScale = Math.Max((float)poster.Width / background.Width, (float)poster.Height / background.Height);
+        var imageWidth = background.Width * fillScale;
+        var imageHeight = background.Height * fillScale;
+        var bounds = SKRect.Create((poster.Width - imageWidth) / 2, (poster.Height - imageHeight) / 2, imageWidth, imageHeight);
+        using var image = SKImage.FromBitmap(background);
+        var sampling = new SKSamplingOptions(SKFilterMode.Linear);
+
+        // Measure only the visible crop. Transparent pixels shouldn't pull its brightness down.
+        canvas.Clear(SKColors.Transparent);
+        canvas.DrawImage(image, bounds, sampling);
+        var brightness = AverageBrightness(poster);
+        canvas.Clear(SKColors.Black);
+        if (brightness == 0)
+        {
+            return;
+        }
+
+        // Bring the average to midgray by blending toward white or black without clipping.
+        const float targetBrightness = 0.5f;
+        var brighten = brightness < targetBrightness;
+        var scale = brighten ? (1 - targetBrightness) / (1 - brightness) : targetBrightness / brightness;
+        var offset = brighten ? 1 - scale : 0;
+        using var filter = SKColorFilter.CreateColorMatrix([
+            scale, 0, 0, 0, offset,
+            0, scale, 0, 0, offset,
+            0, 0, scale, 0, offset,
+            0, 0, 0, 1, 0
+        ]);
+        using var paint = new SKPaint { ColorFilter = filter };
+        canvas.DrawImage(image, bounds, sampling, paint);
+        canvas.DrawColor(new SKColor(0, 0, 0, 204), SKBlendMode.SrcOver); // 80% opaque black
+    }
+
+    private static float AverageBrightness(SKBitmap bitmap)
+    {
+        double sum = 0;
+        long weight = 0;
+        foreach (var pixel in bitmap.Pixels)
+        {
+            sum += pixel.Alpha * (0.2126 * pixel.Red + 0.7152 * pixel.Green + 0.0722 * pixel.Blue);
+            weight += pixel.Alpha;
+        }
+
+        return weight == 0 ? 0 : (float)(sum / (255 * weight));
     }
 
     private sealed class PosterText(string title) : IDisposable

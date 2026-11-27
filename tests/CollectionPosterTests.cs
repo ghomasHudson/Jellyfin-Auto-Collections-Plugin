@@ -37,6 +37,36 @@ public class CollectionPosterTests
         Assert.Contains(SKColors.White, poster.Pixels);
     }
 
+    [Theory]
+    [InlineData(48)]
+    [InlineData(216)]
+    public async Task Normalizes_light_and_dark_list_artwork_to_midgray_before_applying_the_black_overlay(int brightness)
+    {
+        var collection = new TestCollection { Id = Guid.NewGuid(), Name = "Festival picks" };
+        using var background = new SKBitmap(24, 12);
+        var gray = (byte)brightness;
+        using (var canvas = new SKCanvas(background))
+        {
+            canvas.Clear(SKColors.Transparent);
+            using var paint = new SKPaint { Color = new SKColor(gray, gray, gray) };
+            canvas.DrawRect(0, 0, 24, 6, paint);
+        }
+        using var data = background.Encode(SKEncodedImageFormat.Png, 100);
+        var responses = new RecordedHttpResponses();
+        responses.Record(ListImage.AbsoluteUri, () => new(HttpStatusCode.OK) { Content = new ByteArrayContent(data.ToArray()) });
+        using var http = new HttpClient(responses);
+        using var host = new JellyfinBoundary(collection, imageHttp: http);
+
+        await host.Library.EnsurePosterAsync(collection.Id, [], ListImage, CancellationToken.None);
+
+        using var poster = DecodePoster(host);
+        var color = poster.GetPixel(0, 0);
+        // Midgray at 20% brightness is about 26 on an 8-bit scale.
+        Assert.InRange(color.Red, 25, 26);
+        Assert.Equal(new SKColor(color.Red, color.Red, color.Red), color);
+        Assert.Equal(SKColors.Black, poster.GetPixel(0, poster.Height - 1));
+    }
+
     [Fact]
     public async Task Draws_a_favicon_above_the_title_preserving_its_color_transparency_and_aspect_ratio()
     {
@@ -98,8 +128,8 @@ public class CollectionPosterTests
         using var poster = DecodePoster(host);
         var top = poster.GetPixel(0, 0);
         var bottom = poster.GetPixel(0, poster.Height - 1);
-        // The red side strips are cropped, the white top and cyan bottom are darkened.
-        Assert.InRange(top.Red, 1, 127);
+        // The brightness of the cropped white and cyan halves is about 89% before normalization.
+        Assert.InRange(top.Red, 28, 29);
         Assert.Equal(new SKColor(top.Red, top.Red, top.Red), top);
         Assert.Equal(new SKColor(0, top.Red, top.Red), bottom);
         Assert.Equal(top, poster.GetPixel(poster.Width - 1, 0));
