@@ -36,21 +36,16 @@ internal sealed class JellyfinCollectionLibrary(
 
     public TaggedCollection? FindByTags(string urlTag, string markerTag)
     {
-        var collection = GetBoxSetsWithTag(urlTag)
-            .SingleOrDefault(c => c.Tags.Contains(markerTag, StringComparer.Ordinal));
-        return collection is null ? null : new(collection.Id, collection.GetLinkedChildren().Select(item => item.Id).ToArray());
-    }
-
-    public IEnumerable<(Guid Id, IReadOnlyList<string> Tags)> GetCollectionsWithTag(string tag) =>
-        GetBoxSetsWithTag(tag).Select(collection => (collection.Id, (IReadOnlyList<string>)collection.Tags));
-
-    private IEnumerable<BoxSet> GetBoxSetsWithTag(string tag) =>
-        library.GetItemList(new InternalItemsQuery
+        var candidates = library.GetItemList(new InternalItemsQuery
         {
             IncludeItemTypes = [BaseItemKind.BoxSet],
             GroupByPresentationUniqueKey = false,
-            Tags = [tag]
-        }).OfType<BoxSet>().Where(collection => collection.Tags.Contains(tag, StringComparer.Ordinal));
+            Tags = [urlTag]
+        });
+        var collection = candidates.OfType<BoxSet>().SingleOrDefault(c =>
+            c.Tags.Contains(urlTag, StringComparer.Ordinal) && c.Tags.Contains(markerTag, StringComparer.Ordinal));
+        return collection is null ? null : new(collection.Id, collection.GetLinkedChildren().Select(item => item.Id).ToArray());
+    }
 
     public async Task<Guid> CreateAsync(string name, params string[] tags)
     {
@@ -81,22 +76,15 @@ internal sealed class JellyfinCollectionLibrary(
         return collection.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, cancellationToken);
     }
 
-    public Task EnsurePosterAsync(Guid id, IReadOnlyList<Uri> faviconUrls, Uri? listImageUrl, CancellationToken cancellationToken) =>
-        SavePosterAsync(id, faviconUrls, listImageUrl, replaceExisting: false, cancellationToken);
-
-    public Task RegeneratePosterAsync(Guid id, IReadOnlyList<Uri> faviconUrls, Uri? listImageUrl, CancellationToken cancellationToken) =>
-        SavePosterAsync(id, faviconUrls, listImageUrl, replaceExisting: true, cancellationToken);
-
-    private async Task SavePosterAsync(Guid id, IReadOnlyList<Uri> faviconUrls, Uri? listImageUrl, bool replaceExisting,
-        CancellationToken cancellationToken)
+    public async Task EnsurePosterAsync(Guid id, IReadOnlyList<Uri> faviconUrls, Uri? listImageUrl, CancellationToken cancellationToken)
     {
-        if (library.GetItemById(id) is not BoxSet collection || (!replaceExisting && HasCurrentPoster(collection)))
+        if (library.GetItemById(id) is not BoxSet collection || HasCurrentPoster(collection))
         {
             return;
         }
 
         var config = getConfiguration();
-        if (!config.HasPosterElements)
+        if (!config.PosterBackgroundImage && !config.PosterIcon && !config.PosterListName)
         {
             return;
         }
@@ -109,18 +97,12 @@ internal sealed class JellyfinCollectionLibrary(
             ? await images.TryLoadListImageAsync(listImageUrl, cancellationToken).ConfigureAwait(false)
             : null;
         cancellationToken.ThrowIfCancellationRequested();
-        if (!config.PosterListName && logo is null && background is null)
-        {
-            return;
-        }
-
         using var poster = CollectionPoster.Render(config.PosterListName ? collection.Name : string.Empty, logo, background);
 
-        // Jellyfin's SaveImage isn't conditional. Recheck after rendering to narrow the race with
-        // a concurrent upload during sync or with a collection being removed from plugin management.
+        // Jellyfin's SaveImage isn't conditional. Recheck after rendering to narrow the
+        // race with an upload, but another writer can still enter after this check.
         cancellationToken.ThrowIfCancellationRequested();
-        if (library.GetItemById(id) is not BoxSet current ||
-            (replaceExisting ? !current.Tags.Contains(CollectionSync.ManagedCollectionTag, StringComparer.Ordinal) : HasCurrentPoster(current)))
+        if (library.GetItemById(id) is not BoxSet current || HasCurrentPoster(current))
         {
             return;
         }
