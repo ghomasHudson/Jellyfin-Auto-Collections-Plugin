@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.4.2.0 (2026-11-27)
+
+### Fix
+
+- **imdb**: bundle LinuxServer runtime dependencies
+
 ## v0.4.1.0 (2026-11-27)
 
 ### Fix
