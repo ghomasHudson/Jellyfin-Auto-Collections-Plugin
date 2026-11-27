@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.4.0.0 (2026-11-27)
+
+### Feat
+
+- **trakt**: sync public user lists and charts
+- **config**: add optional Trakt Client ID override
+- **imdb**: add list sync with an on-demand browser helper
+- **config**: put verbose logging in a collapsible Debug section
+- **config**: add verbose sync logging option
+- **config**: make poster settings collapsible
+- **posters**: add manual regeneration task
+- **posters**: add settings for poster elements
+- **config**: warn about unsupported source list URLs
+
+### Fix
+
+- **config**: show Client ID directly in the Trakt panel
+- **trakt**: use the official site icon for managed collections (#15)
+- **sync**: redact credentials from unsupported URL warnings (#15)
+- **config**: sanitize Trakt URLs before saving settings (#15)
+- **trakt**: canonicalize public list slugs (#15)
+- **trakt**: allow live chart totals to change between pages (#15)
+- **release**: include release notes in plugin manifest
+- **config**: restore verbose logging label and pad Debug controls
+- **config**: remove visible verbose logging text
+- **posters**: recheck collection before clearing its poster
+- **config**: flag unsupported URLs with a red border
+- **config**: keep Save stable during URL validation
+
+### Refactor
+
+- **trakt**: share media mapping and pagination fixtures (#15)
+- **posters**: clear posters and let sync regenerate them
+
 ## v0.3.0.0 (2026-11-27)
 
 ### Feat
