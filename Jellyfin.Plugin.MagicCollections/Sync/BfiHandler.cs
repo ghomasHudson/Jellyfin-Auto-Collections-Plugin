@@ -66,7 +66,8 @@ public sealed class BfiHandler(HttpClient http) : ISourceListHandler
         }
 
         var name = ReadHeadline(page) ?? article.QuerySelector(":scope > header h1")?.TextContent.Trim();
-        return new(name, []) { MoviesByTitleYear = movies };
+        var description = page.Head?.QuerySelector("meta[property='og:description']")?.GetAttribute("content")?.Trim();
+        return new(name, [], description) { MoviesByTitleYear = movies };
     }
 
     private static List<MovieTitleYear>? ReadMovies(IElement article)
