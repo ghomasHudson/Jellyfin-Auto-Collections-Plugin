@@ -31,7 +31,7 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
     [InlineData(true)]
     public async Task Refreshes_the_existing_overview_from_full_Letterboxd_list_notes_without_new_members(bool collapsed)
     {
-        await _library.CreateAsync("My weekend films", $"AutoCollections:{ListUrl}");
+        await _library.CreateAsync("My weekend films", "Magic Collection", ListUrl, "Letterboxd");
         var collection = Assert.Single(_library.ManagedCollections);
         collection.Overview = "Earlier notes";
         const string fullText = """
@@ -62,7 +62,7 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
 
         var collection = Assert.Single(_library.ManagedCollections);
         Assert.Equal("Weekend Films & Friends", collection.Name);
-        Assert.Equal($"AutoCollections:{ListUrl}", collection.Tag);
+        Assert.Equal(["Magic Collection", ListUrl, "Letterboxd"], collection.Tags);
         Assert.Equal([movie], collection.Members);
     }
 
@@ -75,7 +75,7 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
         RecordHtml(pageTwo, ListPage(pageTwo, 2, Poster(1, seriesPath)));
         RecordHtml(MoviePath, Fixture("letterboxd-movie.html"));
         RecordHtml(seriesPath, Fixture("letterboxd-series.html"));
-        var existing = await _library.CreateAsync("My collection", $"AutoCollections:{ListUrl}");
+        var existing = await _library.CreateAsync("My collection", "Magic Collection", ListUrl, "Letterboxd");
         var movie = AddMedia(SourceMediaType.Movie, "Tmdb", "496243");
         var series = AddMedia(SourceMediaType.Series, "Tmdb", "87108");
         await _library.AddMembersAsync(existing, [movie]);
@@ -129,7 +129,7 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
         await _sync.RunAsync(urls, ReportUnexpected, CancellationToken.None);
 
         var collection = Assert.Single(_library.ManagedCollections);
-        Assert.Equal($"AutoCollections:{ListUrl}", collection.Tag);
+        Assert.Equal(["Magic Collection", ListUrl, "Letterboxd"], collection.Tags);
         Assert.Equal([movie], collection.Members);
         Assert.Equal([ListUrl, Origin + MoviePath], _responses.Requests);
     }
@@ -224,8 +224,8 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
         await restartedSync.RunAsync([ListUrl, Origin + otherList], ReportUnexpected, CancellationToken.None);
 
         Assert.Equal([ListUrl, Origin + MoviePath, ListUrl, Origin + seriesPath, Origin + otherList], _responses.Requests);
-        Assert.Equal([movie, series], _library.ManagedCollections.Single(c => c.Tag == $"AutoCollections:{ListUrl}").Members);
-        Assert.Equal([movie], _library.ManagedCollections.Single(c => c.Tag == $"AutoCollections:{Origin + otherList}").Members);
+        Assert.Equal([movie, series], _library.ManagedCollections.Single(c => c.Tags.Contains(ListUrl)).Members);
+        Assert.Equal([movie], _library.ManagedCollections.Single(c => c.Tags.Contains(Origin + otherList)).Members);
     }
 
     [Fact]
@@ -536,7 +536,7 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
 
     private async Task AssertFailedWithoutChangesAsync()
     {
-        var collectionId = await _library.CreateAsync("Original name", $"AutoCollections:{ListUrl}");
+        var collectionId = await _library.CreateAsync("Original name", "Magic Collection", ListUrl, "Letterboxd");
         var originalMember = Guid.NewGuid();
         await _library.AddMembersAsync(collectionId, [originalMember]);
 

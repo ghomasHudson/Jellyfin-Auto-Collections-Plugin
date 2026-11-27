@@ -34,7 +34,7 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
 
         var managedCollection = Assert.Single(_library.ManagedCollections);
         Assert.Equal("Steven Lu Popular Movies", managedCollection.Name);
-        Assert.Equal($"AutoCollections:{PopularFeed}", managedCollection.Tag);
+        Assert.Equal(["Magic Collection", PopularFeed, "Steven Lu Popular Movies"], managedCollection.Tags);
         Assert.Equal(new Uri("https://stevenlu.com/images/avatar.webp"), Assert.Single(managedCollection.PosterFaviconUrls));
         Assert.Contains(imdbMatch, managedCollection.Members);
         Assert.Contains(tmdbMatch, managedCollection.Members);
@@ -64,7 +64,9 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
 
         await SyncAsync(url);
 
-        Assert.Equal(name, Assert.Single(_library.ManagedCollections).Name);
+        var managedCollection = Assert.Single(_library.ManagedCollections);
+        Assert.Equal(name, managedCollection.Name);
+        Assert.Equal(["Magic Collection", url, "Steven Lu Popular Movies"], managedCollection.Tags);
     }
 
     [Fact]
@@ -193,13 +195,13 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
             await SyncAsync(PopularFeed, allFeed);
         }
 
-        Assert.Equal([spiderman], _library.ManagedCollections.Single(c => c.Tag.EndsWith("/movies.json")).Members);
-        Assert.Equal([coyote], _library.ManagedCollections.Single(c => c.Tag.EndsWith("/all-movies.json")).Members);
+        Assert.Equal([spiderman], _library.ManagedCollections.Single(c => c.Tags.Contains(PopularFeed)).Members);
+        Assert.Equal([coyote], _library.ManagedCollections.Single(c => c.Tags.Contains(allFeed)).Members);
         Assert.Equal([PopularFeed, allFeed], _responses.Requests);
 
         _clock.Advance(TimeSpan.FromHours(1));
         await SyncAsync("HTTPS://POPULAR-MOVIES-DATA.STEVENLU.COM/movies.json", PopularFeed, allFeed);
-        Assert.Equal([spiderman, heart], _library.ManagedCollections.Single(c => c.Tag.EndsWith("/movies.json")).Members);
+        Assert.Equal([spiderman, heart], _library.ManagedCollections.Single(c => c.Tags.Contains(PopularFeed)).Members);
         Assert.Equal([PopularFeed, allFeed, PopularFeed], _responses.Requests);
 
         _clock.Advance(TimeSpan.FromHours(1));

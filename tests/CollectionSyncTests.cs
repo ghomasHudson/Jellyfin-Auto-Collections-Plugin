@@ -39,7 +39,7 @@ public class CollectionSyncTests
             Assert.Equal([unsupportedUrl], unsupported);
             var collection = Assert.Single(library.ManagedCollections);
             Assert.Equal("Festival picks", collection.Name);
-            Assert.Equal("AutoCollections:https://lists.example/festival-picks", collection.Tag);
+            Assert.Equal(["Magic Collection", supportedUrl, "Festival Lists"], collection.Tags);
             Assert.Equal([movie], collection.Members);
             originalId ??= collection.Id;
             Assert.Equal(originalId, collection.Id);
@@ -80,19 +80,26 @@ public class CollectionSyncTests
     {
         const string url = "https://lists.example/festival-picks";
         var library = new ControlledLibrary();
-        var existingId = await library.CreateAsync("My festival", $"AutoCollections:{url}");
-        var unrelatedId = await library.CreateAsync("Other collection", "unrelated");
+        var existingId = await library.CreateAsync("My festival", "Magic Collection", url, "Festival Lists", "My tag");
+        var urlOnlyId = await library.CreateAsync("Other collection", url, "Festival Lists");
+        var otherListId = await library.CreateAsync("Other list", "Magic Collection", "https://lists.example/another-list", "Festival Lists");
         var entry = new MediaIdentity(SourceMediaType.Movie, new Dictionary<string, string> { ["Tmdb"] = "104" });
         var sync = new CollectionSync([new TestHandler(new("Festival picks", [entry]))], library);
 
         await sync.RunAsync([url], _ => { }, CancellationToken.None);
 
-        Assert.Equal("My festival", Assert.Single(library.ManagedCollections, c => c.Id == existingId).PosterTitle);
-        Assert.Null(Assert.Single(library.ManagedCollections, c => c.Id == unrelatedId).PosterTitle);
+        Assert.Equal(3, library.ManagedCollections.Count);
+        var managed = Assert.Single(library.ManagedCollections, c => c.Id == existingId);
+        Assert.Equal("My festival", managed.PosterTitle);
+        Assert.Equal(["Magic Collection", url, "Festival Lists", "My tag"], managed.Tags);
+        Assert.Null(Assert.Single(library.ManagedCollections, c => c.Id == urlOnlyId).PosterTitle);
+        Assert.Null(Assert.Single(library.ManagedCollections, c => c.Id == otherListId).PosterTitle);
     }
 
     private sealed class TestHandler(SourceList source) : ISourceListHandler
     {
+        public string SourceTag => "Festival Lists";
+
         public bool Supports(Uri url) => url.Host == "lists.example";
         public Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken) => Task.FromResult(source);
     }

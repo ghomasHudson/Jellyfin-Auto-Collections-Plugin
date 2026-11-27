@@ -2,6 +2,8 @@ namespace Jellyfin.Plugin.MagicCollections.Sync;
 
 public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICollectionLibrary library)
 {
+    private const string ManagedCollectionTag = "Magic Collection";
+
     public async Task RunAsync(IEnumerable<string> urls, Action<string> reportUnsupported, CancellationToken cancellationToken)
     {
         // Snapshot once per run. Build each index only if a source uses it.
@@ -44,14 +46,15 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            var tag = $"AutoCollections:{canonicalUrl}";
-            var existing = library.FindByTag(tag);
+            var existing = library.FindByTags(canonicalUrl, ManagedCollectionTag);
             if (existing is null && matches.Count == 0)
             {
                 continue;
             }
 
-            var id = existing?.Id ?? await library.CreateAsync(CollectionName(list, source), tag).ConfigureAwait(false);
+            var id = existing?.Id ?? await library.CreateAsync(
+                CollectionName(list, source), ManagedCollectionTag, canonicalUrl, handler.SourceTag)
+                .ConfigureAwait(false);
             matches.ExceptWith(existing?.MemberIds ?? []);
             if (matches.Count != 0)
             {

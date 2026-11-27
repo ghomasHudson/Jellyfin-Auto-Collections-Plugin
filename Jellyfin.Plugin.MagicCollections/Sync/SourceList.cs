@@ -14,9 +14,12 @@ public sealed record SourceList(string? Name, IReadOnlyList<MediaIdentity> Provi
 
 public interface ISourceListHandler
 {
+    // The source's display name, used as a collection tag.
+    string SourceTag { get; }
+
     bool Supports(Uri url);
 
-    // Equivalent source URLs must share the same managed collection tag.
+    // Equivalent source URLs must share the same URL tag.
     Uri GetCanonicalUrl(Uri url) => url;
 
     Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken);

@@ -20,6 +20,8 @@ public sealed class LetterboxdHandler(HttpClient http, string dataPath) : ISourc
     private const string ListContent = "main#content .col-main";
     private readonly LetterboxdFilmCache _cache = new(dataPath);
 
+    public string SourceTag => "Letterboxd";
+
     public bool Supports(Uri url) => url.IsAbsoluteUri && url.OriginalString == Origin + url.AbsolutePath &&
         ListPath.IsMatch(url.AbsolutePath);
 

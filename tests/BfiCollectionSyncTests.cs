@@ -32,7 +32,7 @@ public sealed class BfiCollectionSyncTests : IDisposable
 
         var collection = Assert.Single(_library.ManagedCollections);
         Assert.Equal("Films for a Rainy Day", collection.Name);
-        Assert.Equal($"AutoCollections:{ListUrl}", collection.Tag);
+        Assert.Equal(["Magic Collection", ListUrl, "BFI"], collection.Tags);
         Assert.Equal([movie], collection.Members);
         Assert.Equal([ListUrl], _http.Requests);
     }
@@ -54,7 +54,7 @@ public sealed class BfiCollectionSyncTests : IDisposable
     {
         RecordArticle();
         var movie = AddMedia(Title, 1997);
-        var collectionId = await _library.CreateAsync("Films for a Rainy Day", $"AutoCollections:{ListUrl}");
+        var collectionId = await _library.CreateAsync("Films for a Rainy Day", "Magic Collection", ListUrl, "BFI");
         await _library.AddMembersAsync(collectionId, [movie]);
         var collection = Assert.Single(_library.ManagedCollections);
         collection.Overview = "Earlier notes";
@@ -72,7 +72,7 @@ public sealed class BfiCollectionSyncTests : IDisposable
         RecordArticle(Article().Replace(
             """<meta property="og:description" content="  Film picks for thunder &amp; rain.  ">""",
             descriptionMarkup, StringComparison.Ordinal));
-        var collectionId = await _library.CreateAsync("Films for a Rainy Day", $"AutoCollections:{ListUrl}");
+        var collectionId = await _library.CreateAsync("Films for a Rainy Day", "Magic Collection", ListUrl, "BFI");
         await _library.SetOverviewAsync(collectionId, "Earlier notes", CancellationToken.None);
 
         await SyncAsync();
@@ -158,7 +158,7 @@ public sealed class BfiCollectionSyncTests : IDisposable
         {
             Content = new StringContent("<html><body><main><h1>Unexpected page</h1></main></body></html>", null, "text/html")
         });
-        var collectionId = await _library.CreateAsync("Existing collection", $"AutoCollections:{ListUrl}");
+        var collectionId = await _library.CreateAsync("Existing collection", "Magic Collection", ListUrl, "BFI");
         var member = AddMedia(Title, 1997);
         await _library.AddMembersAsync(collectionId, [member]);
 

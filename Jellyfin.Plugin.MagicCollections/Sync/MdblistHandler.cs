@@ -8,6 +8,8 @@ public sealed class MdblistHandler(HttpClient http) : ISourceListHandler
 {
     private static readonly Uri Origin = new("https://mdblist.com");
 
+    public string SourceTag => "MDBList";
+
     public bool Supports(Uri url) => PublicListPath(url) is not null;
 
     public async Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken)

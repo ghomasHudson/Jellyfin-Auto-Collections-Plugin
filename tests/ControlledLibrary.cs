@@ -4,7 +4,7 @@ namespace MagicCollections.Tests;
 
 internal sealed class ControlledLibrary : ICollectionLibrary
 {
-    public sealed record ManagedCollection(Guid Id, string Name, string Tag, List<Guid> Members)
+    public sealed record ManagedCollection(Guid Id, string Name, IReadOnlyList<string> Tags, List<Guid> Members)
     {
         public string? Overview { get; set; }
         public string? PosterTitle { get; set; }
@@ -16,12 +16,13 @@ internal sealed class ControlledLibrary : ICollectionLibrary
     public List<ManagedCollection> ManagedCollections { get; } = [];
 
     public IEnumerable<LibraryMedia> GetMedia() => Media;
-    public TaggedCollection? FindByTag(string tag) => ManagedCollections.SingleOrDefault(c => c.Tag == tag) is { } c
-        ? new(c.Id, c.Members.ToArray()) : null;
+    public TaggedCollection? FindByTags(string urlTag, string markerTag) =>
+        ManagedCollections.SingleOrDefault(c => c.Tags.Contains(urlTag) && c.Tags.Contains(markerTag)) is { } c
+            ? new(c.Id, c.Members.ToArray()) : null;
 
-    public Task<Guid> CreateAsync(string name, string tag)
+    public Task<Guid> CreateAsync(string name, params string[] tags)
     {
-        var collection = new ManagedCollection(Guid.NewGuid(), name, tag, []);
+        var collection = new ManagedCollection(Guid.NewGuid(), name, [.. tags], []);
         ManagedCollections.Add(collection);
         return Task.FromResult(collection.Id);
     }

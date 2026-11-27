@@ -29,6 +29,8 @@ public sealed class PopularMoviesHandler(HttpClient http, TimeProvider timeProvi
 
     private readonly PopularMoviesFeedCache _cache = new(dataPath, timeProvider);
 
+    public string SourceTag => "Steven Lu Popular Movies";
+
     public bool Supports(Uri url) => FeedName(url) is not null;
 
     public async Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken)

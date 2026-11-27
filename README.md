@@ -33,7 +33,6 @@ Jellyfin plugin to make and update collections based on internet lists such as I
 - [Steven Lu Popular movies](https://github.com/sjlu/popular-movies)
 - [BFI](https://www.bfi.org.uk/articles/type/lists)
 
-
 ### Not yet supported
 
 Follow these issues for the status of other sources from Jellyfin Auto Collections:
@@ -140,7 +139,7 @@ Return a `SourceList` with the list name, plain-text description, favicon URLs, 
 
 Put entries with a media type and provider IDs in `ProviderItems`. British Film Institute (BFI) lists are the only exception: put movie titles and release years in `MoviesByTitleYear` and leave `ProviderItems` empty.
 
-`CollectionSync` matches movies and series by media type and at least one shared provider name and ID. BFI lists explicitly use the separate movie title-and-year match described above. Sync finds existing collections by their `AutoCollections:<absolute source URL>` tags and adds only missing members.
+`CollectionSync` matches movies and series by media type and at least one shared provider name and ID. BFI lists explicitly use the separate movie title-and-year match described above. Sync adds only missing members.
 
 A new collection uses the list name, or the final URL segment with spaces in place of hyphens and underscores. `JellyfinCollectionLibrary` handles Jellyfin queries and writes.
 

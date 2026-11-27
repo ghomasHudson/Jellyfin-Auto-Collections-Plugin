@@ -72,7 +72,7 @@ public sealed class MdblistCollectionSyncTests : IDisposable
             {descriptionMarkup}
             <div class="description">A movie synopsis.</div>
             """, "[]");
-        await _library.CreateAsync("Top movies", $"AutoCollections:{TopMoviesUrl}");
+        await _library.CreateAsync("Top movies", "Magic Collection", TopMoviesUrl, "MDBList");
         var collection = Assert.Single(_library.ManagedCollections);
         collection.Overview = "My overview";
 
@@ -96,7 +96,7 @@ public sealed class MdblistCollectionSyncTests : IDisposable
         var managedCollection = Assert.Single(_library.ManagedCollections);
         Assert.Equal(originalId, managedCollection.Id);
         Assert.Equal("Top Movies", managedCollection.Name);
-        Assert.Equal("AutoCollections:https://mdblist.com/lists/garycrawfordgc/top-movies", managedCollection.Tag);
+        Assert.Equal(["Magic Collection", sourceListUrl, "MDBList"], managedCollection.Tags);
         Assert.Equal([tenet], managedCollection.Members);
     }
 
@@ -117,7 +117,7 @@ public sealed class MdblistCollectionSyncTests : IDisposable
 
         var managedCollection = Assert.Single(_library.ManagedCollections);
         Assert.Equal("Popular Shows", managedCollection.Name);
-        Assert.Equal("AutoCollections:https://mdblist.com/lists/official/shows/popular", managedCollection.Tag);
+        Assert.Equal(["Magic Collection", sourceListUrl, "MDBList"], managedCollection.Tags);
         Assert.Equal(2, managedCollection.Members.Count);
         Assert.Contains(carrie, managedCollection.Members);
         Assert.Contains(visionQuest, managedCollection.Members);
@@ -235,7 +235,7 @@ public sealed class MdblistCollectionSyncTests : IDisposable
     [Fact]
     public async Task Leaves_a_managed_collection_without_a_poster_when_its_source_list_fetch_fails()
     {
-        await _library.CreateAsync("Top Movies", $"AutoCollections:{TopMoviesUrl}");
+        await _library.CreateAsync("Top Movies", "Magic Collection", TopMoviesUrl, "MDBList");
 
         await SyncFailingTopMoviesSourceListAsync(HttpStatusCode.ServiceUnavailable);
 

@@ -16,6 +16,8 @@ public sealed class BfiHandler(HttpClient http) : ISourceListHandler
     private static readonly Regex TitleThenYear = new(@"\A(.+) \(([0-9]{4})\)\z", RegexOptions.NonBacktracking);
     private static readonly Regex YearThenTitle = new(@"\A([0-9]{4}): (.+)\z", RegexOptions.NonBacktracking);
 
+    public string SourceTag => "BFI";
+
     public bool Supports(Uri url) => url.IsAbsoluteUri && url.OriginalString == Origin + url.AbsolutePath &&
         ListPath.IsMatch(url.AbsolutePath);
 

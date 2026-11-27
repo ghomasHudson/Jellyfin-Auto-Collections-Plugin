@@ -33,19 +33,20 @@ internal sealed class JellyfinCollectionLibrary(
         });
     }
 
-    public TaggedCollection? FindByTag(string tag)
+    public TaggedCollection? FindByTags(string urlTag, string markerTag)
     {
         var candidates = library.GetItemList(new InternalItemsQuery
         {
             IncludeItemTypes = [BaseItemKind.BoxSet],
             GroupByPresentationUniqueKey = false,
-            Tags = [tag]
+            Tags = [urlTag]
         });
-        var collection = candidates.OfType<BoxSet>().SingleOrDefault(c => c.Tags.Contains(tag, StringComparer.Ordinal));
+        var collection = candidates.OfType<BoxSet>().SingleOrDefault(c =>
+            c.Tags.Contains(urlTag, StringComparer.Ordinal) && c.Tags.Contains(markerTag, StringComparer.Ordinal));
         return collection is null ? null : new(collection.Id, collection.GetLinkedChildren().Select(item => item.Id).ToArray());
     }
 
-    public async Task<Guid> CreateAsync(string name, string tag)
+    public async Task<Guid> CreateAsync(string name, params string[] tags)
     {
         // Jellyfin derives the box set's folder and ID from the creation name.
         // Use a private storage name so a display namesake cannot collide with it.
@@ -54,7 +55,7 @@ internal sealed class JellyfinCollectionLibrary(
             Name = $"MagicCollections-{Guid.NewGuid():N}"
         }).ConfigureAwait(false);
         collection.Name = name;
-        collection.Tags = [.. collection.Tags, tag];
+        collection.Tags = [.. collection.Tags, .. tags.Except(collection.Tags, StringComparer.Ordinal)];
         collection.LockedFields = [.. collection.LockedFields, MetadataField.Name, MetadataField.Tags];
         await collection.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
         return collection.Id;
