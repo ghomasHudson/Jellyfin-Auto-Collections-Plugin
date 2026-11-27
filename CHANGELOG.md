@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.4.1.0 (2026-11-27)
+
+### Fix
+
+- **imdb**: bundle libXext and clarify helper startup failures
+
 ## v0.4.0.0 (2026-11-27)
 
 ### Feat
