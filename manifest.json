@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/main/logo.png",
     "versions": [
       {
+        "version": "0.4.2.0",
+        "targetAbi": "10.11.5.0",
+        "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.4.2.0/magic-collections-0.4.2.0.zip",
+        "checksum": "95f9404fced3fc3516fce958ae4fd6d7",
+        "timestamp": "2026-11-27T20:11:27Z",
+        "changelog": "## v0.4.2.0 (2026-11-27)\n\n### Fix\n\n- **imdb**: bundle LinuxServer runtime dependencies\n\n[Release notes on GitHub](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.4.2.0)"
+      },
+      {
         "version": "0.4.1.0",
         "targetAbi": "10.11.5.0",
         "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.4.1.0/magic-collections-0.4.1.0.zip",
