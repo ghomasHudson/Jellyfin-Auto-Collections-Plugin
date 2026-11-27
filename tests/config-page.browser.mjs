@@ -110,12 +110,10 @@ async function testPage() {
         }
         traktToggle.click();
         const traktPanel = traktToggle.parentElement;
-        const registrationLink = traktPanel.querySelector('a[href="https://developer.trakt.tv/apps/new"]');
-        if (!traktPanel.innerText.includes('supported public Trakt URL') ||
-                !traktPanel.innerText.includes("you don't need to sign in to Trakt or register an app") ||
+        if (!traktPanel.innerText.includes("you don't need to sign in to Trakt or register an app") ||
                 !traktPanel.innerText.includes('Magic Collections uses Trakt but is not endorsed or certified by Trakt') ||
-                !traktClientId.checkVisibility() || !registrationLink?.checkVisibility() ||
-                !traktPanel.innerText.includes('verified GitHub account')) {
+                !traktClientId.checkVisibility() ||
+                !traktPanel.innerText.includes('Paste only the Client ID, or leave blank to use the bundled ID.')) {
             throw new Error('Expanding Trakt should show the setup guidance, notice, and optional Client ID field.');
         }
         traktToggle.click();
