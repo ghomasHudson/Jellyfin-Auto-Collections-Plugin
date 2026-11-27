@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.3.0.0 (2026-11-27)
+
+### Feat
+
+- **sync**: tag collections with their source and list URL
+- **posters**: use source list artwork as the background
+- **posters**: add source favicons to collection posters
+- **bfi**: sync editorial lists by movie title and year
+
+### Fix
+
+- **bfi**: include the site favicon on collection posters
+- **posters**: skip branded MDBList artwork for backgrounds
+- **posters**: normalize artwork before applying an 80% black overlay
+- **bfi**: use Open Graph metadata for collection descriptions
+- **bfi**: distinguish captioned lists from other articles
+
 ## v0.2.3.0 (2026-11-26)
 
 ### Feat
