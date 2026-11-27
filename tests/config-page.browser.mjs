@@ -110,21 +110,14 @@ async function testPage() {
         }
         traktToggle.click();
         const traktPanel = traktToggle.parentElement;
+        const registrationLink = traktPanel.querySelector('a[href="https://developer.trakt.tv/apps/new"]');
         if (!traktPanel.innerText.includes('supported public Trakt URL') ||
                 !traktPanel.innerText.includes("you don't need to sign in to Trakt or register an app") ||
                 !traktPanel.innerText.includes('Magic Collections uses Trakt but is not endorsed or certified by Trakt') ||
-                traktClientId.checkVisibility()) {
-            throw new Error('Expanding Trakt should explain default setup and show the Trakt notice without showing the override field.');
-        }
-        const overrideToggle = [...traktPanel.querySelectorAll('details > summary')]
-            .find(summary => summary.textContent.trim() === 'Client ID override (optional)');
-        overrideToggle?.click();
-        const registrationLink = traktPanel.querySelector('a[href="https://developer.trakt.tv/apps/new"]');
-        if (!traktClientId.checkVisibility() || !registrationLink?.checkVisibility() ||
+                !traktClientId.checkVisibility() || !registrationLink?.checkVisibility() ||
                 !traktPanel.innerText.includes('verified GitHub account')) {
-            throw new Error('Expanding the optional override should show the Client ID field and registration guidance.');
+            throw new Error('Expanding Trakt should show the setup guidance, notice, and optional Client ID field.');
         }
-        overrideToggle.click();
         traktToggle.click();
         if (traktClientId.checkVisibility()) throw new Error('Collapsing Trakt should hide the Client ID field again.');
         if (verboseLogging?.type !== 'checkbox' || verboseLogging.checked) {
@@ -247,7 +240,6 @@ async function testPage() {
         await until(() => saveCount === 4 && saved.VerboseLogging === false, 'Save did not disable verbose logging.');
 
         traktToggle.click();
-        overrideToggle.click();
         const clientId = 'example-trakt-client-id';
         const checksBeforeOverride = checked.length;
         if (traktClientId.value !== '') throw new Error('The override should be blank when unset.');
