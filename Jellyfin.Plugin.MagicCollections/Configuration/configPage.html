@@ -169,8 +169,8 @@
                         checkboxOptions.forEach(option => { config[option.name] = option.checked; });
                         config.TraktClientId = traktClientId.value.trim();
                         const result = await ApiClient.updatePluginConfiguration(pluginId, config);
-                        Dashboard.processPluginConfigurationUpdateResult(result);
                         renderConfiguration(await ApiClient.getPluginConfiguration(pluginId));
+                        Dashboard.processPluginConfigurationUpdateResult(result);
                     });
                 });
             })();

@@ -66,7 +66,7 @@ public sealed class PluginConfigurationTests : IDisposable
             ]
         });
         var logger = new TaskLog();
-        using var http = new HttpClient();
+        using var http = new HttpClient(new RecordedHttpResponses());
         var task = new SyncTask(new CollectionSync([new TraktHandler(http, () => plugin.Configuration)], new ControlledLibrary()), logger);
 
         await task.ExecuteAsync(new Progress<double>(), CancellationToken.None);
