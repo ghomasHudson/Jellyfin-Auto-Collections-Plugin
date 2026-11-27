@@ -86,6 +86,8 @@ async function testPage() {
         const save = form.querySelector('button[type="submit"]');
         const posterToggle = form.querySelector('#magicCollectionsPoster > summary');
         const posterOptions = [...form.querySelectorAll('#magicCollectionsPoster input[type="checkbox"]')];
+        const traktToggle = [...form.querySelectorAll('summary')].find(summary => summary.textContent.trim() === 'Trakt');
+        const traktClientId = form.elements.TraktClientId;
         const debugToggle = [...form.querySelectorAll('summary')].find(summary => summary.textContent.trim() === 'Debug');
         const verboseLogging = form.elements.VerboseLogging;
         const visiblePosterOptions = () => posterOptions.filter(option => option.checkVisibility()).length;
@@ -100,6 +102,28 @@ async function testPage() {
         if (posterToggle?.textContent.trim() !== 'Poster' || visiblePosterOptions() !== 0) {
             throw new Error('The Poster section should start collapsed.');
         }
+        if (!traktToggle || !traktClientId || traktClientId.checkVisibility()) {
+            throw new Error('The Trakt section should start collapsed and hide the Client ID field.');
+        }
+        traktToggle.click();
+        const traktPanel = traktToggle.parentElement;
+        if (!traktPanel.innerText.includes('supported public Trakt URL') ||
+                !traktPanel.innerText.includes("you don't need to sign in to Trakt or register an app") ||
+                !traktPanel.innerText.includes('Magic Collections uses Trakt but is not endorsed or certified by Trakt') ||
+                traktClientId.checkVisibility()) {
+            throw new Error('Expanding Trakt should explain default setup and show the Trakt notice without showing the override field.');
+        }
+        const overrideToggle = [...traktPanel.querySelectorAll('details > summary')]
+            .find(summary => summary.textContent.trim() === 'Client ID override (optional)');
+        overrideToggle?.click();
+        const registrationLink = traktPanel.querySelector('a[href="https://developer.trakt.tv/apps/new"]');
+        if (!traktClientId.checkVisibility() || !registrationLink?.checkVisibility() ||
+                !traktPanel.innerText.includes('verified GitHub account')) {
+            throw new Error('Expanding the optional override should show the Client ID field and registration guidance.');
+        }
+        overrideToggle.click();
+        traktToggle.click();
+        if (traktClientId.checkVisibility()) throw new Error('Collapsing Trakt should hide the Client ID field again.');
         if (verboseLogging?.type !== 'checkbox' || verboseLogging.checked) {
             throw new Error('Verbose logging should be an unchecked checkbox when absent from saved settings.');
         }
@@ -218,6 +242,26 @@ async function testPage() {
         verboseLogging.click();
         save.click();
         await until(() => saveCount === 4 && saved.VerboseLogging === false, 'Save did not disable verbose logging.');
+
+        traktToggle.click();
+        overrideToggle.click();
+        const clientId = 'example-trakt-client-id';
+        const checksBeforeOverride = checked.length;
+        if (traktClientId.value !== '') throw new Error('The override should be blank when unset.');
+        enter(traktClientId, '  ' + clientId + '  ');
+        save.click();
+        await until(() => saveCount === 5, 'Save did not accept the Trakt Client ID override.');
+        if (saved.TraktClientId !== clientId || saved.SourceUrls.length !== 1 || saved.SourceUrls[0] !== delayed) {
+            throw new Error('Save should trim the override and store it separately from source list URLs.');
+        }
+        enter(traktClientId, 'unsaved');
+        document.querySelector('#magicCollectionsPage').dispatchEvent(new Event('pageshow'));
+        await until(() => traktClientId.value === clientId, 'Reloading did not restore the saved Client ID.');
+        enter(traktClientId, '  ');
+        save.click();
+        await until(() => saveCount === 6 && saved.TraktClientId === '', 'Saving a blank override should restore the default.');
+        await wait(500);
+        if (checked.length !== checksBeforeOverride) throw new Error('Editing the override should not trigger URL validation.');
         result.textContent = 'PASS';
     } catch (error) {
         result.textContent = error.message;
