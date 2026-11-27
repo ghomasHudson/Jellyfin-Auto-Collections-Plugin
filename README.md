@@ -2,8 +2,8 @@
 
 <img width="800" alt="image" src="https://github.com/user-attachments/assets/06681ad8-0ca4-4b78-b423-9fa34639a2ff" />
 <br/>
-<img width="400" alt="image" src="https://github.com/user-attachments/assets/4849512f-e9a5-4a41-89c2-ad1a49f0f922" />
-<img width="400" alt="image" src="https://github.com/user-attachments/assets/5da21092-339e-4be4-a3df-5a0ce995aa70" />
+<img width="400" height="188" alt="image" src="https://github.com/user-attachments/assets/4849512f-e9a5-4a41-89c2-ad1a49f0f922" />
+<img width="400" height="188" alt="image" src="https://github.com/user-attachments/assets/07281f77-3697-4d52-8369-ff1ccc4e04a3" />
 
 
 Jellyfin plugin to make and update collections based on internet lists such as IMDb and letterboxd
