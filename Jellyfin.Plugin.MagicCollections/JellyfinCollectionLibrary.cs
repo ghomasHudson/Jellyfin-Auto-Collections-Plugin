@@ -11,7 +11,8 @@ using MediaBrowser.Model.Entities;
 namespace Jellyfin.Plugin.MagicCollections;
 
 internal sealed class JellyfinCollectionLibrary(
-    ILibraryManager library, ICollectionManager collections, IProviderManager providers) : ICollectionLibrary
+    ILibraryManager library, ICollectionManager collections, IProviderManager providers,
+    CollectionFaviconClient favicons) : ICollectionLibrary
 {
     public IEnumerable<LibraryMedia> GetMedia()
     {
@@ -73,7 +74,7 @@ internal sealed class JellyfinCollectionLibrary(
         return collection.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, cancellationToken);
     }
 
-    public async Task EnsurePosterAsync(Guid id, CancellationToken cancellationToken)
+    public async Task EnsurePosterAsync(Guid id, IReadOnlyList<Uri> faviconUrls, CancellationToken cancellationToken)
     {
         if (library.GetItemById(id) is not BoxSet collection || HasCurrentPoster(collection))
         {
@@ -81,7 +82,9 @@ internal sealed class JellyfinCollectionLibrary(
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        using var poster = CollectionPoster.Render(collection.Name);
+        using var logo = await favicons.TryLoadAsync(faviconUrls, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        using var poster = CollectionPoster.Render(collection.Name, logo);
 
         // Jellyfin's SaveImage isn't conditional. Recheck after rendering to narrow the
         // race with an upload, but another writer can still enter after this check.

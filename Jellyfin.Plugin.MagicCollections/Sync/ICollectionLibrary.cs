@@ -11,5 +11,5 @@ public interface ICollectionLibrary
     Task<Guid> CreateAsync(string name, string tag);
     Task AddMembersAsync(Guid id, IReadOnlyCollection<Guid> memberIds);
     Task SetOverviewAsync(Guid id, string overview, CancellationToken cancellationToken);
-    Task EnsurePosterAsync(Guid id, CancellationToken cancellationToken);
+    Task EnsurePosterAsync(Guid id, IReadOnlyList<Uri> faviconUrls, CancellationToken cancellationToken);
 }

@@ -9,12 +9,14 @@ namespace Jellyfin.Plugin.MagicCollections;
 
 internal static class CollectionPoster
 {
-    public static Stream Render(string title)
+    public static Stream Render(string title, SKBitmap? logo)
     {
         const int width = 600;
         const int height = 900;
         const float maxTextWidth = 500;
         const float maxTextHeight = 800;
+        const float maxLogoSize = 112;
+        const float logoGap = 32;
         using var bitmap = new SKBitmap(width, height);
         using var canvas = new SKCanvas(bitmap);
         title = string.Join(' ', title.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
@@ -25,18 +27,32 @@ internal static class CollectionPoster
 
         canvas.Clear(SKColors.Black);
         var lines = WrapTitle(title, text, maxTextWidth).ToArray();
+        var logoScale = logo is null ? 0 : maxLogoSize / Math.Max(logo.Width, logo.Height);
+        var logoWidth = (logo?.Width ?? 0) * logoScale;
+        var logoHeight = (logo?.Height ?? 0) * logoScale;
+        var logoSpace = logoHeight + (logo is not null && lines.Length != 0 ? logoGap : 0);
+        var ascent = lines.Length == 0 ? 0 : lines.Min(line => line.Ascent);
+        var descent = lines.Length == 0 ? 0 : lines.Max(line => line.Descent);
+        var lineHeight = descent - ascent;
+        var spacing = lineHeight + 8;
+        var textHeight = lines.Length == 0 ? 0 : (lines.Length - 1) * spacing + lineHeight;
+        var scale = lines.Length == 0 ? 1 :
+            Math.Min(1, Math.Min(maxTextWidth / lines.Max(line => line.Width), (maxTextHeight - logoSpace) / textHeight));
+        var top = (height - logoSpace - textHeight * scale) / 2;
+
+        if (logo is not null)
+        {
+            var left = (width - logoWidth) / 2;
+            var bounds = SKRect.Create(left, top, logoWidth, logoHeight);
+            using var image = SKImage.FromBitmap(logo);
+            canvas.DrawImage(image, bounds, new SKSamplingOptions(SKFilterMode.Linear));
+        }
+
         if (lines.Length != 0)
         {
-            var widestLineWidth = lines.Max(line => line.Width);
-            var ascent = lines.Min(line => line.Ascent);
-            var descent = lines.Max(line => line.Descent);
-            var lineHeight = descent - ascent;
-            var spacing = lineHeight + 8;
-            var textHeight = (lines.Length - 1) * spacing + lineHeight;
-            var scale = Math.Min(1, Math.Min(maxTextWidth / widestLineWidth, maxTextHeight / textHeight));
-            canvas.Translate(width / 2f, height / 2f);
+            canvas.Translate(width / 2f, top + logoSpace);
             canvas.Scale(scale);
-            var baseline = -textHeight / 2 - ascent;
+            var baseline = -ascent;
             foreach (var line in lines)
             {
                 using var builder = new SKTextBlobBuilder();

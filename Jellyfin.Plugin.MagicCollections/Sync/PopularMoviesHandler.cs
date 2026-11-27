@@ -7,6 +7,8 @@ public sealed class PopularMoviesHandler(HttpClient http, TimeProvider timeProvi
 {
     private const string Host = "popular-movies-data.stevenlu.com";
     private const string Origin = "https://" + Host;
+    // The JSON-only feeds have no favicon; use the publisher's site icon.
+    private static readonly Uri PublisherFavicon = new("https://stevenlu.com/images/avatar.webp");
     private static readonly IReadOnlyDictionary<string, string> FeedNames = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["/movies.json"] = "Steven Lu Popular Movies",
@@ -34,7 +36,7 @@ public sealed class PopularMoviesHandler(HttpClient http, TimeProvider timeProvi
         var name = FeedName(url) ?? throw new ArgumentException("Not a Steven Lu Popular Movies feed URL.", nameof(url));
         var canonicalUrl = new Uri(Origin + url.AbsolutePath);
         var items = await _cache.ReadAsync(canonicalUrl, FetchAsync, cancellationToken).ConfigureAwait(false);
-        return new(name, items);
+        return new(name, items) { FaviconUrls = [PublisherFavicon] };
     }
 
     private async Task<IReadOnlyList<MediaIdentity>> FetchAsync(Uri url)

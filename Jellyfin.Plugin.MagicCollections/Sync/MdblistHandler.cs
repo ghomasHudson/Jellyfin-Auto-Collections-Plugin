@@ -13,7 +13,8 @@ public sealed class MdblistHandler(HttpClient http) : ISourceListHandler
     public async Task<SourceList> ReadAsync(Uri url, CancellationToken cancellationToken)
     {
         var path = PublicListPath(url) ?? throw new ArgumentException("Not a public MDBList source list URL.", nameof(url));
-        var html = await FetchBodyAsync(new Uri(Origin, path), url, cancellationToken).ConfigureAwait(false);
+        var pageUrl = new Uri(Origin, path);
+        var html = await FetchBodyAsync(pageUrl, url, cancellationToken).ConfigureAwait(false);
         var json = await FetchBodyAsync(new Uri(Origin, path + "/json"), url, cancellationToken).ConfigureAwait(false);
 
         try
@@ -24,7 +25,10 @@ public sealed class MdblistHandler(HttpClient http) : ISourceListHandler
             var description = heading?.NextElementSibling is { } sibling && sibling.Matches("span.text.wrap")
                 ? sibling
                 : null;
-            return new(heading?.TextContent.Trim(), ReadItems(json), ListDescription.Read(description));
+            return new(heading?.TextContent.Trim(), ReadItems(json), ListDescription.Read(description))
+            {
+                FaviconUrls = SourceFavicons.FromPage(page, pageUrl)
+            };
         }
         catch (JsonException exception)
         {

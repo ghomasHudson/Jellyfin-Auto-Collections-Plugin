@@ -8,6 +8,7 @@ internal sealed class ControlledLibrary : ICollectionLibrary
     {
         public string? Overview { get; set; }
         public string? PosterTitle { get; set; }
+        public IReadOnlyList<Uri> PosterFaviconUrls { get; set; } = [];
     }
 
     public List<LibraryMedia> Media { get; } = [];
@@ -36,10 +37,15 @@ internal sealed class ControlledLibrary : ICollectionLibrary
         return Task.CompletedTask;
     }
 
-    public Task EnsurePosterAsync(Guid id, CancellationToken cancellationToken)
+    public Task EnsurePosterAsync(Guid id, IReadOnlyList<Uri> faviconUrls, CancellationToken cancellationToken)
     {
         var collection = ManagedCollections.Single(c => c.Id == id);
-        collection.PosterTitle ??= collection.Name;
+        if (collection.PosterTitle is null)
+        {
+            collection.PosterTitle = collection.Name;
+            collection.PosterFaviconUrls = faviconUrls;
+        }
+
         return Task.CompletedTask;
     }
 }

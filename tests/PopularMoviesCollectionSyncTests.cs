@@ -35,6 +35,7 @@ public sealed class PopularMoviesCollectionSyncTests : IDisposable
         var managedCollection = Assert.Single(_library.ManagedCollections);
         Assert.Equal("Steven Lu Popular Movies", managedCollection.Name);
         Assert.Equal($"AutoCollections:{PopularFeed}", managedCollection.Tag);
+        Assert.Equal(new Uri("https://stevenlu.com/images/avatar.webp"), Assert.Single(managedCollection.PosterFaviconUrls));
         Assert.Contains(imdbMatch, managedCollection.Members);
         Assert.Contains(tmdbMatch, managedCollection.Members);
         Assert.DoesNotContain(wrongId, managedCollection.Members);

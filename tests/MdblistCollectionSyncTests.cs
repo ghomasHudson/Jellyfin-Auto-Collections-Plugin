@@ -19,6 +19,31 @@ public sealed class MdblistCollectionSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task Passes_the_MDBList_page_favicon_and_a_site_fallback_to_the_poster()
+    {
+        const string source = "http://www.mdblist.com/lists/garycrawfordgc/top-movies/";
+        RecordSourceList(TopMoviesUrl, """
+            <head>
+                <base href="https://other.example/">
+                <link rel="mask-icon" href="/mask.svg">
+                <link rel="icon" href="https://other.example/logo.png">
+                <link rel="icon" href="https://mdblist.com:8443/logo.png">
+                <link rel="icon" href="http://mdblist.com/logo.png">
+                <link rel="icon" href="https://user@mdblist.com/logo.png">
+                <link rel="SHORTCUT ICON" href="../../icons/favicon.png">
+            </head>
+            <body><h3 class="textdark">Top Movies</h3></body>
+            """, """[{"mediatype":"movie","id":577922}]""");
+        _library.Media.Add(new(Guid.NewGuid(), new(SourceMediaType.Movie, new Dictionary<string, string> { ["Tmdb"] = "577922" })));
+
+        await SyncSourceListAsync(source);
+
+        Assert.Equal(
+            [new Uri("https://mdblist.com/icons/favicon.png"), new Uri("https://mdblist.com/favicon.ico")],
+            Assert.Single(_library.ManagedCollections).PosterFaviconUrls);
+    }
+
+    [Fact]
     public async Task Uses_the_MDBList_source_list_description_as_the_new_managed_collection_overview()
     {
         RecordSourceList(TopMoviesUrl, """

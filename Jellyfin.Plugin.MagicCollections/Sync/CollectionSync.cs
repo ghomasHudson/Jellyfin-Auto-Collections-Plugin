@@ -62,7 +62,7 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             {
                 await library.SetOverviewAsync(id, list.Description, cancellationToken).ConfigureAwait(false);
             }
-            await library.EnsurePosterAsync(id, cancellationToken).ConfigureAwait(false);
+            await library.EnsurePosterAsync(id, list.FaviconUrls, cancellationToken).ConfigureAwait(false);
         }
     }
 
