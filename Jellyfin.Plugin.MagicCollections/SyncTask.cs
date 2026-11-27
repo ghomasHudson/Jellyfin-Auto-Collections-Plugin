@@ -21,8 +21,13 @@ public sealed class SyncTask(CollectionSync sync, ILogger<SyncTask> logger) : IS
         var plugin = MagicCollectionsPlugin.Instance ?? throw new InvalidOperationException("Magic Collections is not loaded.");
         var config = plugin.Configuration;
         await sync.RunAsync(config.SourceUrls,
-            url => logger.LogWarning("Unsupported source list URL: {SourceUrl}", url),
+            url => logger.LogWarning("Unsupported source list URL: {SourceUrl}", UrlForLog(url)),
             cancellationToken, config.VerboseLogging ? logger : null).ConfigureAwait(false);
         progress.Report(100);
     }
+
+    private static string UrlForLog(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var source) && source.Scheme is "http" or "https"
+            ? source.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped)
+            : "(not an HTTP(S) URL)";
 }

@@ -1,10 +1,13 @@
 using System.Text.Json;
 using System.Xml.Serialization;
 using Jellyfin.Extensions.Json;
+using Jellyfin.Plugin.AutoCollections;
 using Jellyfin.Plugin.MagicCollections;
 using Jellyfin.Plugin.MagicCollections.Configuration;
+using Jellyfin.Plugin.MagicCollections.Sync;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Serialization;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace MagicCollections.Tests;
@@ -50,6 +53,29 @@ public sealed class PluginConfigurationTests : IDisposable
         Assert.False(settings.GetProperty("PosterIcon").GetBoolean());
     }
 
+    [Fact]
+    public async Task Sync_logs_unsupported_URLs_without_userinfo_query_or_fragment()
+    {
+        var plugin = CreatePlugin();
+        plugin.UpdateConfiguration(new PluginConfiguration
+        {
+            SourceUrls =
+            [
+                "https://name:private-password@app.trakt.tv/users/justin/lists/open-your-eyes?access_token=private-query#private-fragment",
+                "not a URL#private-invalid"
+            ]
+        });
+        var logger = new TaskLog();
+        using var http = new HttpClient();
+        var task = new SyncTask(new CollectionSync([new TraktHandler(http, () => plugin.Configuration)], new ControlledLibrary()), logger);
+
+        await task.ExecuteAsync(new Progress<double>(), CancellationToken.None);
+
+        Assert.Equal(2, logger.Warnings.Count);
+        Assert.Contains("https://app.trakt.tv/users/justin/lists/open-your-eyes", logger.Warnings[0], StringComparison.Ordinal);
+        Assert.All(logger.Warnings, warning => Assert.DoesNotContain("private-", warning, StringComparison.Ordinal));
+    }
+
     public void Dispose() => _data.Delete(recursive: true);
 
     private Plugin CreatePlugin() => new(new PluginTestServices.TestApplicationPaths(_data.FullName), new ConfigurationXmlSerializer());
@@ -72,5 +98,20 @@ public sealed class PluginConfigurationTests : IDisposable
         }
 
         public object DeserializeFromBytes(Type type, byte[] buffer) => throw new NotSupportedException();
+    }
+
+    private sealed class TaskLog : ILogger<SyncTask>
+    {
+        public List<string> Warnings { get; } = [];
+        public bool IsEnabled(LogLevel logLevel) => logLevel == LogLevel.Warning;
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (IsEnabled(logLevel))
+            {
+                Warnings.Add(formatter(state, exception));
+            }
+        }
     }
 }
