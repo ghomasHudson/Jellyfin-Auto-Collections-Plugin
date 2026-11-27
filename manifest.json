@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/main/logo.png",
     "versions": [
       {
+        "version": "0.4.1.0",
+        "targetAbi": "10.11.5.0",
+        "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.4.1.0/magic-collections-0.4.1.0.zip",
+        "checksum": "37ff3b5e0ac4ddb646ceb914a6d37e9a",
+        "timestamp": "2026-11-27T19:51:48Z",
+        "changelog": "## v0.4.1.0 (2026-11-27)\n\n### Fix\n\n- **imdb**: bundle libXext and clarify helper startup failures\n\n[Release notes on GitHub](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.4.1.0)"
+      },
+      {
         "version": "0.4.0.0",
         "targetAbi": "10.11.5.0",
         "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.4.0.0/magic-collections-0.4.0.0.zip",
