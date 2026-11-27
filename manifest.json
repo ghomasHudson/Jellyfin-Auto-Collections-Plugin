@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/main/logo.png",
     "versions": [
       {
+        "version": "0.4.0.0",
+        "targetAbi": "10.11.5.0",
+        "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.4.0.0/magic-collections-0.4.0.0.zip",
+        "checksum": "b47e4c238c4eb18af200df31da48f61b",
+        "timestamp": "2026-11-27T17:50:08Z",
+        "changelog": "## v0.4.0.0 (2026-11-27)\n\n### Feat\n\n- **trakt**: sync public user lists and charts\n- **config**: add optional Trakt Client ID override\n- **imdb**: add list sync with an on-demand browser helper\n- **config**: put verbose logging in a collapsible Debug section\n- **config**: add verbose sync logging option\n- **config**: make poster settings collapsible\n- **posters**: add manual regeneration task\n- **posters**: add settings for poster elements\n- **config**: warn about unsupported source list URLs\n\n### Fix\n\n- **config**: show Client ID directly in the Trakt panel\n- **trakt**: use the official site icon for managed collections (#15)\n- **sync**: redact credentials from unsupported URL warnings (#15)\n- **config**: sanitize Trakt URLs before saving settings (#15)\n- **trakt**: canonicalize public list slugs (#15)\n- **trakt**: allow live chart totals to change between pages (#15)\n- **release**: include release notes in plugin manifest\n- **config**: restore verbose logging label and pad Debug controls\n- **config**: remove visible verbose logging text\n- **posters**: recheck collection before clearing its poster\n- **config**: flag unsupported URLs with a red border\n- **config**: keep Save stable during URL validation\n\n### Refactor\n\n- **trakt**: share media mapping and pagination fixtures (#15)\n- **posters**: clear posters and let sync regenerate them\n\n[Release notes on GitHub](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.4.0.0)"
+      },
+      {
         "version": "0.3.0.0",
         "targetAbi": "10.11.5.0",
         "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.3.0.0/magic-collections-0.3.0.0.zip",
