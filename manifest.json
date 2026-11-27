@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/main/logo.png",
     "versions": [
       {
+        "version": "0.5.0.0",
+        "targetAbi": "10.11.5.0",
+        "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.5.0.0/magic-collections-0.5.0.0.zip",
+        "checksum": "d875715d04d24eb0ec1160edbadd18ca",
+        "timestamp": "2026-11-27T21:15:31Z",
+        "changelog": "## v0.5.0.0 (2026-11-27)\n\n### Feat\n\n- **trakt**: sync private lists with PKCE sign-in\n\n### Fix\n\n- **posters**: make icons opt-in and restore Trakt favicon downloads\n- **imdb**: remove direct source sync and browser helper\n- **trakt**: streamline private list setup and OAuth\n\n[Release notes on GitHub](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.5.0.0)"
+      },
+      {
         "version": "0.4.2.0",
         "targetAbi": "10.11.5.0",
         "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.4.2.0/magic-collections-0.4.2.0.zip",
