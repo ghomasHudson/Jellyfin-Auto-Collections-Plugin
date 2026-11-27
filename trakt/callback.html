@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <!-- Update the CSP hash if the inline script changes. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-J3EZa8rXypYtxxZ942/s8vg17hgNEWPggz3dfcx9L6c='; base-uri 'none'; form-action 'none'">
+    <title>Connect Trakt to Magic Collections</title>
+</head>
+<body>
+    <main>
+        <h1>Connect Trakt to Magic Collections</h1>
+        <p id="instructions">Start Trakt sign-in from the Magic Collections settings in Jellyfin.</p>
+        <section id="handoff" hidden>
+            <p><label for="response">One-time Trakt response</label></p>
+            <textarea id="response" rows="4" cols="32" readonly spellcheck="false"></textarea>
+            <p><button id="copy" type="button">Copy response</button></p>
+            <p id="status" role="status"></p>
+        </section>
+        <noscript><p>Enable JavaScript to copy the Trakt response.</p></noscript>
+    </main>
+    <script>
+        (() => {
+            const url = new URL(window.location.href);
+            const codes = url.searchParams.getAll('code');
+            const states = url.searchParams.getAll('state');
+            const denied = url.searchParams.has('error');
+            url.search = '';
+            url.hash = '';
+            history.replaceState(null, '', url);
+
+            const instructions = document.getElementById('instructions');
+            if (denied) {
+                instructions.textContent = 'Trakt did not grant access. Return to Jellyfin and try connecting again.';
+                return;
+            }
+            if (codes.length !== 1 || states.length !== 1 || !codes[0].trim() || !states[0].trim()) {
+                return;
+            }
+
+            const response = document.getElementById('response');
+            const status = document.getElementById('status');
+            response.value = JSON.stringify({ code: codes[0], state: states[0] });
+            instructions.textContent = 'Copy the response and paste it into the same Jellyfin dashboard where you started Trakt sign-in.';
+            document.getElementById('handoff').hidden = false;
+            document.getElementById('copy').addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText(response.value);
+                    status.textContent = 'Response copied.';
+                } catch {
+                    response.focus();
+                    response.select();
+                    status.textContent = 'Copy the selected response manually.';
+                }
+            });
+        })();
+    </script>
+</body>
+</html>
