@@ -19,7 +19,7 @@ public sealed class MdblistCollectionSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task Passes_the_MDBList_list_image_and_favicons_to_the_poster()
+    public async Task Passes_MDBList_favicons_but_not_its_branded_list_image_to_the_poster()
     {
         const string source = "http://www.mdblist.com/lists/garycrawfordgc/top-movies/";
         RecordSourceList(TopMoviesUrl, """
@@ -43,22 +43,7 @@ public sealed class MdblistCollectionSyncTests : IDisposable
         Assert.Equal(
             [new Uri("https://mdblist.com/icons/favicon.png"), new Uri("https://mdblist.com/favicon.ico")],
             collection.PosterFaviconUrls);
-        Assert.Equal(new Uri("https://mdblist.com/media/list.jpg?id=2618"), collection.PosterListImageUrl);
-    }
-
-    [Theory]
-    [InlineData("https://other.example/list.jpg")]
-    [InlineData("http://mdblist.com/list.jpg")]
-    [InlineData("https://mdblist.com:8443/list.jpg")]
-    [InlineData("https://user@mdblist.com/list.jpg")]
-    public async Task Ignores_MDBList_list_images_outside_its_HTTPS_origin(string url)
-    {
-        RecordSourceList(TopMoviesUrl, $"""<meta property="og:image" content="{url}">""", "[]");
-        await _library.CreateAsync("Top movies", $"AutoCollections:{TopMoviesUrl}");
-
-        await SyncSourceListAsync(TopMoviesUrl);
-
-        Assert.Null(Assert.Single(_library.ManagedCollections).PosterListImageUrl);
+        Assert.Null(collection.PosterListImageUrl);
     }
 
     [Fact]

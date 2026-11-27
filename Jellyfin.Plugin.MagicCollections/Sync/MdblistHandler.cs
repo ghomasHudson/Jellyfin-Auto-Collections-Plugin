@@ -25,10 +25,10 @@ public sealed class MdblistHandler(HttpClient http) : ISourceListHandler
             var description = heading?.NextElementSibling is { } sibling && sibling.Matches("span.text.wrap")
                 ? sibling
                 : null;
+            // MDBList's share image already contains text and icons, so leave the poster background unset.
             return new(heading?.TextContent.Trim(), ReadItems(json), ListDescription.Read(description))
             {
-                FaviconUrls = SourceImages.ReadFaviconUrls(page, pageUrl),
-                ImageUrl = SourceImages.ReadListImageUrl(page, pageUrl)
+                FaviconUrls = SourceImages.ReadFaviconUrls(page, pageUrl)
             };
         }
         catch (JsonException exception)
