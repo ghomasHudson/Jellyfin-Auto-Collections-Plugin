@@ -26,50 +26,13 @@ Jellyfin plugin to make and update collections based on internet lists such as I
 2. Open **Dashboard → Scheduled Tasks → Sync Magic Collections**. The default trigger is daily at 03:00 server time. Select **Run now** to run the same task immediately.
 3. If the task fails, check the task result or Jellyfin server log.
 
-A failed fetch or invalid list response stops the run and reports the source list URL without changing its managed collection. Unsupported URLs are logged and skipped. A valid empty source list is not a fetch error.
+### Supported List Sources
 
-Sync gives managed collections without a poster a black poster with the collection name in white. The text uses the server's installed fonts. Existing posters stay as they are after a rename. To use the new name, delete the poster and sync again.
+- Letterboxd - public lists (`https://letterboxd.com/official/list/letterboxds-top-500-films/`)
+- mdblist - e.g. [Top Movies of the week](https://mdblist.com/lists/garycrawfordgc/top-movies-of-the-week)
+- [Steven Lu Popular movies](https://github.com/sjlu/popular-movies)
+- [BFI](https://www.bfi.org.uk/articles/type/lists)
 
-Sync copies the source list’s description into the collection overview and updates it when the description changes. A missing or blank description leaves the overview untouched. Steven Lu’s feeds do not provide list descriptions.
-
-## Supported list sources
-
-Here are the supported sites and example URLs:
-
-- MDBList
-  - <https://mdblist.com/lists/garycrawfordgc/top-movies>
-  - <https://mdblist.com/lists/official/movies/popular>
-- Steven Lu’s Popular Movies
-  - <https://popular-movies-data.stevenlu.com/movies.json>
-  - <https://popular-movies-data.stevenlu.com/all-movies.json>
-  - <https://popular-movies-data.stevenlu.com/movies-metacritic-min70.json>
-  - <https://popular-movies-data.stevenlu.com/movies-imdb-min7.json>
-  - <https://popular-movies-data.stevenlu.com/movies-rottentomatoes-min80.json>
-- Letterboxd
-  - <https://letterboxd.com/official/list/letterboxds-top-500-films/>
-- British Film Institute (BFI)
-  - <https://www.bfi.org.uk/lists/10-great-documentaries-that-play-like-thrillers>
-
-### MDBList
-
-Use the URL from your browser, not a `/json` export URL. The plugin supports public user lists and official movie and show lists, for example:
-
-- <https://mdblist.com/lists/garycrawfordgc/top-movies>
-- <https://mdblist.com/lists/official/movies/popular>
-
-The regular `streaming-charts` list works. The interactive JustWatch charts (`justwatch-streaming-charts`) do not, because their JSON export ignores the chart filters.
-
-### Letterboxd
-
-Use a public custom list URL in the form `https://letterboxd.com/<member>/list/<slug>/`, without a query string or fragment Private lists, watchlists, liked films, short links, and filtered or sorted views are not supported.
-
-To refresh cached Letterboxd film IDs, run **Dashboard → Scheduled Tasks → Clear Magic Collections Cache**. The task has no default schedule. It leaves your collections untouched and does not start a sync; the next sync fetches the IDs again.
-
-### BFI film lists
-
-Use an editorial film list URL in the form `https://www.bfi.org.uk/lists/<slug>`, without a query string or fragment. The plugin reads titles and years from film captions that agree with their section headings. The lists index, news articles, and articles that mostly use other formats, such as video clip surveys, are not supported.
-
-BFI lists are the exception to provider-ID matching. The plugin adds a film only when exactly one movie in Jellyfin has the same title and release year. It ignores case, extra spaces, and straight versus curly apostrophes. A missing year, different edition title, or multiple matches means the movie is skipped. No external metadata lookup is needed.
 
 ### Not yet supported
 
