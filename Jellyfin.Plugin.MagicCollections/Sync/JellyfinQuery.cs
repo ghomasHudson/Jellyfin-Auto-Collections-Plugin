@@ -1,6 +1,6 @@
 using System.Globalization;
-using System.Text;
 using Jellyfin.Data.Enums;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Model.Entities;
 
 namespace Jellyfin.Plugin.MagicCollections.Sync;
@@ -8,16 +8,10 @@ namespace Jellyfin.Plugin.MagicCollections.Sync;
 internal sealed class JellyfinQuery
 {
     private const string Prefix = "jellyfin/";
-    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
-    private readonly List<JellyfinAdditionalFilter> _additionalFilters = [];
+    private readonly List<JellyfinNativeFilter> _nativeFilters = [];
 
     public double? MinCriticRating { get; private set; }
-    public string[] Tags { get; private set; } = [];
-    public string[] Genres { get; private set; } = [];
-    public string? Person { get; private set; }
-    public string? SearchTerm { get; private set; }
     public string[] Studios { get; private set; } = [];
-    public int[] Years { get; private set; } = [];
     public BaseItemKind[] ItemTypes { get; private set; } = [BaseItemKind.Movie, BaseItemKind.Series];
     public SeriesStatus[] SeriesStatuses { get; private set; } = [];
     public Guid? ParentId { get; private set; }
@@ -27,41 +21,46 @@ internal sealed class JellyfinQuery
     public bool? Is3D { get; private set; }
     public string? Name { get; private set; }
     public string? Description { get; private set; }
-    public IReadOnlyList<JellyfinAdditionalFilter> AdditionalFilters => _additionalFilters;
 
-    public static bool HasPrefix(string? source) =>
-        source?.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase) == true;
+    public void ApplyNativeFilters(InternalItemsQuery query)
+    {
+        foreach (var filter in _nativeFilters)
+        {
+            filter.Apply(query);
+        }
+    }
+
+    // A null result is not a local source; a local source has either a query or a syntax error.
+    public static (JellyfinQuery? Query, string? Error)? ParseSource(string? source) =>
+        source?.Trim() is { } trimmed && trimmed.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)
+            ? Parse(trimmed)
+            : null;
 
     public string CanonicalSource
     {
         get
         {
-            // Fixed key order, with defaults omitted. Only selection parameters contribute.
-            var pairs = new List<string>();
-            void Add(string key, string value) => pairs.Add($"{key}={Uri.EscapeDataString(value)}");
-            if (Genres.Length > 0) Add("genres", string.Join(',', Genres));
+            // Only selection parameters contribute; fixed key order and omitted defaults identify equivalents.
+            var pairs = new SortedDictionary<string, string>(StringComparer.Ordinal);
+            void Add(string key, string value) => pairs.Add(key, Uri.EscapeDataString(value));
             if (HasSubtitles is { } hasSubtitles) Add("hassubtitles", hasSubtitles ? "true" : "false");
             if (ItemTypes.Length != 2) Add("includeitemtypes", ItemTypes[0].ToString());
             if (Is3D is { } is3D) Add("is3d", is3D ? "true" : "false");
             if (Limit is { } limit) Add("limit", limit.ToString(CultureInfo.InvariantCulture));
             if (MinCriticRating is { } rating) Add("mincriticrating", rating.ToString(CultureInfo.InvariantCulture));
             if (ParentId is { } parent) Add("parentid", parent.ToString("N"));
-            if (Person is not null) Add("person", Person);
-            if (SearchTerm is not null) Add("searchterm", SearchTerm);
-            if (SeriesStatuses.Length > 0) Add("seriesstatus", string.Join(',', SeriesStatuses));
-            if (Random && Limit is not null) Add("sortby", "Random");
-            if (Studios.Length > 0) Add("studios", string.Join(',', Studios));
-            if (Tags.Length > 0) Add("tags", string.Join(',', Tags));
-            if (Years.Length > 0) Add("years", string.Join(',', Years.Select(year => year.ToString(CultureInfo.InvariantCulture))));
-            foreach (var filter in AdditionalFilters.OrderBy(filter => filter.Key, StringComparer.Ordinal))
+            if (SeriesStatuses.Length > 0) pairs.Add("seriesstatus", JellyfinQueryValues.EncodeList(SeriesStatuses.Select(status => status.ToString())));
+            if (Random) Add("sortby", "Random");
+            if (Studios.Length > 0) pairs.Add("studios", JellyfinQueryValues.EncodeList(Studios));
+            foreach (var filter in _nativeFilters)
             {
-                Add(filter.Key, filter.CanonicalValue);
+                pairs.Add(filter.Key, filter.CanonicalValue);
             }
-            return Prefix + string.Join('&', pairs);
+            return Prefix + string.Join('&', pairs.Select(pair => $"{pair.Key}={pair.Value}"));
         }
     }
 
-    public static (JellyfinQuery? Query, string? Error) Parse(string source)
+    private static (JellyfinQuery? Query, string? Error) Parse(string source)
     {
         var query = new JellyfinQuery();
         var keys = new HashSet<string>(StringComparer.Ordinal);
@@ -79,7 +78,18 @@ internal sealed class JellyfinQuery
                 return (null, "A parameter is specified more than once.");
             }
 
-            if (DecodeValue(pair[1]) is not { Length: > 0 } value)
+            var encoded = pair[1];
+            if (JellyfinNativeFilters.Supports(key))
+            {
+                if (!JellyfinNativeFilters.TryParse(key, encoded, out var filter))
+                {
+                    return (null, $"Invalid value for '{key}'.");
+                }
+                query._nativeFilters.Add(filter);
+                continue;
+            }
+
+            if (JellyfinQueryValues.DecodeValue(encoded) is not { Length: > 0 } value)
             {
                 return (null, "Each parameter needs a non-empty, URL-encoded value.");
             }
@@ -94,40 +104,24 @@ internal sealed class JellyfinQuery
                     }
                     query.MinCriticRating = rating;
                     break;
-                case "tags":
-                case "genres":
                 case "studios":
-                    var names = SplitList(value);
-                    if (names.Contains(string.Empty))
+                    if (JellyfinQueryValues.DecodeList(encoded) is not { } names)
                     {
-                        return (null, "Tag, genre and studio lists cannot contain empty names.");
+                        return (null, "studios must contain non-empty names.");
                     }
-                    names = names.Select(name => name.ToLowerInvariant()).Distinct().Order(StringComparer.Ordinal).ToArray();
-                    if (key == "tags") query.Tags = names;
-                    if (key == "genres") query.Genres = names;
-                    if (key == "studios") query.Studios = names;
-                    break;
-                case "person":
-                    query.Person = value;
-                    break;
-                case "searchterm":
-                    query.SearchTerm = value.All(char.IsAscii) ? value.ToLowerInvariant() : value;
-                    break;
-                case "years":
-                    var years = new HashSet<int>();
-                    foreach (var year in SplitList(value))
+                    query.Studios = names.Select(JellyfinQueryValues.CleanMetadataName).Distinct().Order(StringComparer.Ordinal).ToArray();
+                    if (query.Studios.Any(string.IsNullOrWhiteSpace))
                     {
-                        if (!TryPositiveInt(year, out var number))
-                        {
-                            return (null, "years must contain positive whole numbers.");
-                        }
-                        years.Add(number);
+                        return (null, "studios must contain non-empty names.");
                     }
-                    query.Years = years.Order().ToArray();
                     break;
                 case "includeitemtypes":
+                    if (JellyfinQueryValues.DecodeList(encoded) is not { } typeNames)
+                    {
+                        return (null, "includeItemTypes supports only Movie and Series.");
+                    }
                     var types = new HashSet<BaseItemKind>();
-                    foreach (var type in SplitList(value))
+                    foreach (var type in typeNames)
                     {
                         if (type.Equals("Movie", StringComparison.OrdinalIgnoreCase)) types.Add(BaseItemKind.Movie);
                         else if (type.Equals("Series", StringComparison.OrdinalIgnoreCase)) types.Add(BaseItemKind.Series);
@@ -136,8 +130,12 @@ internal sealed class JellyfinQuery
                     query.ItemTypes = types.Order().ToArray();
                     break;
                 case "seriesstatus":
+                    if (JellyfinQueryValues.DecodeList(encoded) is not { } statusNames)
+                    {
+                        return (null, "seriesStatus supports only Continuing, Ended and Unreleased.");
+                    }
                     var statuses = new HashSet<SeriesStatus>();
-                    foreach (var status in SplitList(value))
+                    foreach (var status in statusNames)
                     {
                         if (status.Equals("Continuing", StringComparison.OrdinalIgnoreCase)) statuses.Add(SeriesStatus.Continuing);
                         else if (status.Equals("Ended", StringComparison.OrdinalIgnoreCase)) statuses.Add(SeriesStatus.Ended);
@@ -163,7 +161,7 @@ internal sealed class JellyfinQuery
                     query.ParentId = parent;
                     break;
                 case "limit":
-                    if (!TryPositiveInt(value, out var limit))
+                    if (!JellyfinQueryValues.TryPositiveInt(value, out var limit))
                     {
                         return (null, "limit must be a positive whole number.");
                     }
@@ -183,74 +181,15 @@ internal sealed class JellyfinQuery
                     query.Description = value;
                     break;
                 default:
-                    if (!JellyfinAdditionalFilters.Supports(key))
-                    {
-                        return (null, "An unsupported parameter was specified.");
-                    }
-                    if (!JellyfinAdditionalFilters.TryParse(key, value, out var filter))
-                    {
-                        return (null, $"Invalid value for '{key}'.");
-                    }
-                    query._additionalFilters.Add(filter);
-                    break;
+                    return (null, "An unsupported parameter was specified.");
             }
         }
 
-        // Name and ID forms are alternatives, especially for studios: both write StudioIds.
-        foreach (var (nameKey, idKey) in new[] { ("genres", "genreids"), ("person", "personids"), ("studios", "studioids") })
+        if (query.Random && query.Limit is null)
         {
-            if (keys.Contains(nameKey) && keys.Contains(idKey))
-            {
-                return (null, $"'{nameKey}' and '{idKey}' cannot be combined.");
-            }
+            return (null, "sortBy=Random requires a limit.");
         }
+
         return (query, null);
-    }
-
-    private static string[] SplitList(string value) => value.Split(',', StringSplitOptions.TrimEntries);
-
-    private static bool TryPositiveInt(string value, out int number) =>
-        int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out number) && number > 0;
-
-    private static string? DecodeValue(string value)
-    {
-        var decoded = new StringBuilder(value.Length);
-        var bytes = new List<byte>();
-        for (int index = 0; index < value.Length;)
-        {
-            var ch = value[index];
-            if (ch == '%')
-            {
-                bytes.Clear();
-                while (index < value.Length && value[index] == '%')
-                {
-                    if (index + 2 >= value.Length || !byte.TryParse(value.AsSpan(index + 1, 2),
-                        NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var octet))
-                    {
-                        return null;
-                    }
-                    bytes.Add(octet);
-                    index += 3;
-                }
-                try
-                {
-                    decoded.Append(StrictUtf8.GetString(bytes.ToArray()));
-                }
-                catch (DecoderFallbackException)
-                {
-                    return null;
-                }
-                continue;
-            }
-
-            if (!char.IsAsciiLetterOrDigit(ch) && ch is not ('-' or '_' or '.' or '~' or ',' or '+'))
-            {
-                return null;
-            }
-            decoded.Append(ch == '+' ? ' ' : ch);
-            index++;
-        }
-        var result = decoded.ToString();
-        return result.Any(char.IsControl) ? null : result.Trim();
     }
 }

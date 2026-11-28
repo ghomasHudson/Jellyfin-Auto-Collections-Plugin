@@ -12,8 +12,8 @@ public sealed class SourceListUrlController(IEnumerable<ISourceListHandler> hand
 {
     [HttpPost]
     public bool Validate([FromBody] SourceListUrlRequest request) =>
-        request.Url?.Trim() is { } source && JellyfinQuery.HasPrefix(source)
-            ? JellyfinQuery.Parse(source).Query is not null
+        JellyfinQuery.ParseSource(request.Url) is { } local
+            ? local.Query is not null
             : SourceListHandlerLookup.Find(handlers, request.Url) is not null;
 }
 

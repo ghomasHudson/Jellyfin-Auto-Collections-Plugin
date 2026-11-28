@@ -6,6 +6,7 @@ using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.IO;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -129,7 +130,7 @@ public sealed class JellyfinQuerySyncTests
         await sync.RunAsync([$"jellyfin/seriesStatus=CONTINUING,Ended,ended&parentId={scope:N}&limit=2&list_desc=Updated"],
             Assert.Fail, CancellationToken.None);
         Assert.Same(collection, Assert.Single(library.ManagedCollections));
-        Assert.Equal("Updated", collection.Overview);
+        Assert.Equal("Original", collection.Overview);
     }
 
     [Theory]
@@ -200,7 +201,7 @@ public sealed class JellyfinQuerySyncTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Studio_names_and_IDs_cannot_replace_each_other_in_the_same_query(bool namesFirst)
+    public async Task A_studio_ID_parameter_is_rejected_even_when_studio_names_are_provided(bool namesFirst)
     {
         var (library, index, provider) = CreateLibrary();
         using var services = provider;
@@ -217,7 +218,7 @@ public sealed class JellyfinQuerySyncTests
         await services.GetRequiredService<CollectionSync>().RunAsync([source],
             Assert.Fail, CancellationToken.None, reportJellyfinFailure: reports.Add);
 
-        Assert.Contains("cannot be combined", Assert.Single(reports));
+        Assert.Contains("unsupported parameter", Assert.Single(reports));
         Assert.Empty(library.ManagedCollections);
     }
 
@@ -245,6 +246,51 @@ public sealed class JellyfinQuerySyncTests
         Assert.Equal("Updated", collection.Overview);
     }
 
+    [Theory]
+    [InlineData("genres")]
+    [InlineData("tags")]
+    [InlineData("studios")]
+    public async Task Accent_equivalent_metadata_names_reuse_the_same_collection(string filter)
+    {
+        var (library, index, provider) = CreateLibrary();
+        using var services = provider;
+        var (_, root) = index.AddLibrary();
+        index.AddStudio("Café");
+        var movie = index.Add(new Movie { Tags = ["Café"], Studios = ["Café"] }, root, genres: ["Café"]);
+        var sync = services.GetRequiredService<CollectionSync>();
+
+        await sync.RunAsync([$"jellyfin/{filter}=Caf%C3%A9"], Assert.Fail, CancellationToken.None);
+        var collection = Assert.Single(library.ManagedCollections);
+        await sync.RunAsync([$"jellyfin/{filter}=CAFE&list_desc=Updated"], Assert.Fail, CancellationToken.None);
+
+        Assert.Same(collection, Assert.Single(library.ManagedCollections));
+        Assert.Equal("Updated", collection.Overview);
+        Assert.Equal([movie.Id], collection.Members);
+    }
+
+    [Theory]
+    [InlineData("genres")]
+    [InlineData("tags")]
+    [InlineData("studios")]
+    public async Task Encoded_commas_in_metadata_names_do_not_split_or_share_identity_with_separate_names(string filter)
+    {
+        var (library, index, provider) = CreateLibrary();
+        using var services = provider;
+        var (_, root) = index.AddLibrary();
+        index.AddStudio("A,B");
+        index.AddStudio("A");
+        var literal = index.Add(new Movie { Tags = ["A,B"], Studios = ["A,B"] }, root, genres: ["A,B"]);
+        var separate = index.Add(new Movie { Tags = ["A"], Studios = ["A"] }, root, genres: ["A"]);
+        var sync = services.GetRequiredService<CollectionSync>();
+
+        await sync.RunAsync(
+            [$"jellyfin/{filter}=A%2CB&list_name=Literal", $"jellyfin/{filter}=A,B&list_name=List"],
+            Assert.Fail, CancellationToken.None);
+
+        Assert.Equal([literal.Id], Assert.Single(library.ManagedCollections, c => c.Name == "Literal").Members);
+        Assert.Equal([separate.Id], Assert.Single(library.ManagedCollections, c => c.Name == "List").Members);
+    }
+
     [Fact]
     public async Task Equivalent_extended_filters_reuse_the_same_collection()
     {
@@ -264,7 +310,7 @@ public sealed class JellyfinQuerySyncTests
 
         Assert.Same(collection, Assert.Single(library.ManagedCollections));
         Assert.Equal([movie.Id], collection.Members);
-        Assert.Equal("Updated", collection.Overview);
+        Assert.Equal("Original", collection.Overview);
     }
 
     [Theory]
@@ -362,6 +408,30 @@ public sealed class JellyfinQuerySyncTests
     }
 
     [Fact]
+    public async Task A_partially_unresolved_library_preserves_scoped_and_global_membership()
+    {
+        var (library, index, provider) = CreateLibrary();
+        using var services = provider;
+        var (scope, root) = index.AddLibrary();
+        var secondRoot = index.AddLibraryPath(scope, "/other-media/");
+        var first = index.Add(new Movie(), root);
+        var second = index.Add(new Movie(), secondRoot);
+        var sync = services.GetRequiredService<CollectionSync>();
+        var sources = new[] { $"jellyfin/parentId={scope:N}", "jellyfin/genres=Mystery" };
+        await sync.RunAsync(sources, Assert.Fail, CancellationToken.None);
+        Assert.Equal(2, library.ManagedCollections.Count);
+
+        index.SetUnindexed(scope, secondRoot);
+        var reports = new List<string>();
+        await sync.RunAsync(sources, Assert.Fail, CancellationToken.None, reportJellyfinFailure: reports.Add);
+
+        Assert.Equal(2, reports.Count);
+        Assert.All(reports, report => Assert.Contains("path could not be resolved", report));
+        Assert.All(library.ManagedCollections, collection =>
+            Assert.Equal(new[] { first.Id, second.Id }, collection.Members.Order()));
+    }
+
+    [Fact]
     public async Task Limit_without_random_has_stable_membership_even_when_Jellyfin_changes_its_result_order()
     {
         var (library, index, provider) = CreateLibrary();
@@ -390,9 +460,21 @@ public sealed class JellyfinQuerySyncTests
         var services = PluginTestServices.BuildProvider(services =>
         {
             services.AddSingleton(manager);
+            services.AddSingleton(DispatchProxy.Create<IFileSystem, FileSystemPaths>());
             services.AddSingleton<ICollectionLibrary>(collections);
         });
         return (collections, index, services);
+    }
+
+    public class FileSystemPaths : DispatchProxy
+    {
+        protected override object? Invoke(MethodInfo? method, object?[]? args) =>
+            method?.Name switch
+            {
+                nameof(IFileSystem.AreEqual) => Path.TrimEndingDirectorySeparator((string)args![0]!) ==
+                    Path.TrimEndingDirectorySeparator((string)args[1]!),
+                _ => throw new NotSupportedException(method?.Name)
+            };
     }
 
     public class LibraryIndex : DispatchProxy
@@ -400,14 +482,14 @@ public sealed class JellyfinQuerySyncTests
         private readonly List<VirtualFolderInfo> _libraries = [];
         private readonly Dictionary<Guid, BaseItem> _folders = [];
         private readonly List<(BaseItem Item, Guid Root)> _media = [];
-        private readonly Dictionary<string, Guid> _studios = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Guid> _studios = new();
         private readonly Dictionary<Guid, string> _credits = [];
 
         public bool FailNextRead { get; set; }
         public Guid AddStudio(string name)
         {
             var id = Guid.NewGuid();
-            _studios.Add(name, id);
+            _studios.Add(MetadataKey(name), id);
             return id;
         }
         public void Credit(BaseItem item, string person) => _credits.Add(item.Id, person);
@@ -415,6 +497,22 @@ public sealed class JellyfinQuerySyncTests
         public void SetLibraryEnabled(Guid id, bool enabled) =>
             _libraries.Single(folder => folder.ItemId == id.ToString("N")).LibraryOptions.Enabled = enabled;
         public void SetUnindexed(Guid id) => ((CollectionFolder)_folders[id]).PhysicalFolderIds = [];
+        public void SetUnindexed(Guid id, Guid root)
+        {
+            var folder = (CollectionFolder)_folders[id];
+            folder.PhysicalFolderIds = folder.PhysicalFolderIds.Where(candidate => candidate != root).ToArray();
+        }
+
+        public Guid AddLibraryPath(Guid id, string path)
+        {
+            var root = Guid.NewGuid();
+            _folders[root] = new Folder { Id = root, Path = Path.TrimEndingDirectorySeparator(path) };
+            var library = _libraries.Single(folder => folder.ItemId == id.ToString("N"));
+            library.Locations = [.. library.Locations, path];
+            var folder = (CollectionFolder)_folders[id];
+            folder.PhysicalFolderIds = [.. folder.PhysicalFolderIds, root];
+            return root;
+        }
 
         public (Guid Id, Guid Root) AddLibrary(bool enabled = true)
         {
@@ -450,7 +548,7 @@ public sealed class JellyfinQuerySyncTests
         private Guid[] FindStudio(InternalItemsQuery query)
         {
             Assert.Equal([BaseItemKind.Studio], query.IncludeItemTypes);
-            return _studios.TryGetValue(query.Name!, out var id) ? [id] : [];
+            return _studios.TryGetValue(MetadataKey(query.Name!), out var id) ? [id] : [];
         }
 
         private BaseItem[] Query(InternalItemsQuery query)
@@ -468,12 +566,12 @@ public sealed class JellyfinQuerySyncTests
                 .Where(entry => query.AncestorIds.Contains(entry.Root))
                 .Select(entry => entry.Item)
                 .Where(item => query.IncludeItemTypes.Contains(item.GetBaseItemKind()))
-                .Where(item => query.Genres.Count == 0 || item.Genres.Intersect(query.Genres, StringComparer.OrdinalIgnoreCase).Any())
-                .Where(item => query.Tags.Length == 0 || item.Tags.Intersect(query.Tags, StringComparer.OrdinalIgnoreCase).Any())
+                .Where(item => query.Genres.Count == 0 || item.Genres.Select(MetadataKey).Intersect(query.Genres.Select(MetadataKey)).Any())
+                .Where(item => query.Tags.Length == 0 || item.Tags.Select(MetadataKey).Intersect(query.Tags.Select(MetadataKey)).Any())
                 .Where(item => query.Person is null || _credits.GetValueOrDefault(item.Id) == query.Person)
                 .Where(item => query.SearchTerm is null || item.Name.Contains(query.SearchTerm, StringComparison.OrdinalIgnoreCase))
                 .Where(item => query.StudioIds.Length == 0 ||
-                    item.Studios.Any(name => query.StudioIds.Contains(_studios.GetValueOrDefault(name))))
+                    item.Studios.Any(name => query.StudioIds.Contains(_studios.GetValueOrDefault(MetadataKey(name)))))
                 .Where(item => query.Years.Length == 0 || query.Years.Contains(item.ProductionYear!.Value))
                 .Where(item => query.IsVirtualItem is null || query.IsVirtualItem == item.IsVirtualItem)
                 .Where(item => query.IsPlaceHolder is null || query.IsPlaceHolder == (item is Video { IsPlaceHolder: true }))
@@ -482,5 +580,8 @@ public sealed class JellyfinQuerySyncTests
                 .Take(query.Limit ?? int.MaxValue)
                 .ToArray();
         }
+
+        // The fixture only needs the index's case folding and é/e equivalence.
+        private static string MetadataKey(string name) => name.ToLowerInvariant().Replace('é', 'e');
     }
 }

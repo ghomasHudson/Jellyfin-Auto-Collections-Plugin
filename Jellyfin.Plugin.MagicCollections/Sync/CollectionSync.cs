@@ -30,101 +30,22 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
         foreach (var url in urls)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            Uri? externalSource = null;
-            string sourceTag, handlerTag;
-            string? logUrl, previousTag = null;
-            SourceList list;
-            HashSet<Guid> matches;
-            int matchableEntryCount;
-            if (_jellyfin is not null && url?.Trim() is { } localSource && JellyfinQuery.HasPrefix(localSource))
+            var result = _jellyfin is { } jellyfin && JellyfinQuery.ParseSource(url) is { } local
+                ? ReadLocal(jellyfin, local.Query, local.Error)
+                : await ReadExternalAsync(url).ConfigureAwait(false);
+            if (result is null)
             {
-                var (query, error) = JellyfinQuery.Parse(localSource);
-                if (query is null)
-                {
-                    var message = $"Invalid Jellyfin library query: {error}";
-                    if (reportJellyfinFailure is null) throw new ArgumentException(message);
-                    reportJellyfinFailure(message);
-                    continue;
-                }
-                sourceTag = "jellyfin-query:" + Hash(query.CanonicalSource);
-                handlerTag = "Jellyfin";
-                logUrl = sourceTag;
-                if (!BeginSource(sourceTag, logUrl))
-                {
-                    continue;
-                }
-                try
-                {
-                    matches = _jellyfin.Read(query, cancellationToken).ToHashSet();
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException && reportJellyfinFailure is not null)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    reportJellyfinFailure($"Jellyfin library query failed ({sourceTag}): {ex.Message}");
-                    continue;
-                }
-                matchableEntryCount = matches.Count;
-                list = new SourceList(query.Name, [], query.Description);
-            }
-            else
-            {
-                if (SourceListHandlerLookup.Find(handlers, url) is not { } match)
-                {
-                    reportUnsupported(url!);
-                    continue;
-                }
-                var (source, handler) = match;
-                externalSource = source;
-                handlerTag = handler.SourceTag;
-                var canonicalSource = handler.GetCanonicalUrl(source);
-                var canonicalUrl = canonicalSource.AbsoluteUri;
-                // A personal list may be private; don't wait for the API to find out before redacting it.
-                var opaqueTag = handler is TraktHandler trakt && trakt.IsPersonalList(canonicalSource)
-                    ? PrivateTraktTag(canonicalUrl) : null;
-                logUrl = opaqueTag ?? (verboseLogger is null ? null :
-                    canonicalSource.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped));
-                if (!BeginSource(canonicalUrl, logUrl))
-                {
-                    continue;
-                }
-                try
-                {
-                    list = await handler.ReadAsync(source, cancellationToken).ConfigureAwait(false);
-                }
-                catch (SourceListReadException ex) when (ex.IsPrivateTraktFailure && reportPrivateFailure is not null)
-                {
-                    reportPrivateFailure($"{opaqueTag}: {ex.Reason}");
-                    continue;
-                }
-                matches = list.ProviderItems.SelectMany(Keys)
-                    .SelectMany(key => mediaByProvider.Value[key]).ToHashSet();
-                foreach (var movie in list.MoviesByTitleYear.Where(movie => movie.IsComplete))
-                {
-                    var candidates = moviesByTitleYear.Value[movie.MatchKey()].Distinct().Take(2).ToArray();
-                    if (candidates.Length == 1)
-                    {
-                        matches.Add(candidates[0]);
-                    }
-                }
-                matchableEntryCount = list.ProviderItems.Count + list.MoviesByTitleYear.Count;
-                // Watchlist and recommendation URLs refer to the connected account's own results.
-                sourceTag = list.TraktAccountScopedOwner is { } owner
-                    ? PrivateTraktTag($"{canonicalUrl}|{owner.ToLowerInvariant()}")
-                    : list.ReadWithTraktAccount ? opaqueTag! : canonicalUrl;
-                if (opaqueTag is not null && list.TraktAccountScopedOwner is null)
-                {
-                    previousTag = list.ReadWithTraktAccount ? canonicalUrl : opaqueTag;
-                }
+                continue;
             }
             cancellationToken.ThrowIfCancellationRequested();
-            var libraryMatchCount = matches.Count;
-            var existing = library.FindByTags(sourceTag, ManagedCollectionTag);
-            if (existing is null && previousTag is not null &&
+            var libraryMatchCount = result.MatchedIds.Count;
+            var existing = library.FindByTags(result.SourceTag, ManagedCollectionTag);
+            if (existing is null && result.PreviousTag is { } previousTag &&
                 library.FindByTags(previousTag, ManagedCollectionTag) is { } previous)
             {
                 // Changing the source's access mode must not create a second collection.
                 // Only migrate after successfully reading the entire list.
-                await library.ReplaceTagAsync(previous.Id, previousTag, sourceTag, cancellationToken).ConfigureAwait(false);
+                await library.ReplaceTagAsync(previous.Id, previousTag, result.SourceTag, cancellationToken).ConfigureAwait(false);
                 existing = previous;
             }
 
@@ -132,16 +53,16 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             {
                 verboseLogger?.LogInformation(
                     "No library matches for {SourceUrl} ({MatchableEntryCount} entries available for matching); collection not created",
-                    logUrl, matchableEntryCount);
+                    result.LogLabel, result.MatchableEntryCount);
                 continue;
             }
 
             var id = existing?.Id ?? await library.CreateAsync(
-                CollectionName(list, externalSource), ManagedCollectionTag, sourceTag, handlerTag)
+                result.Name, ManagedCollectionTag, result.SourceTag, result.HandlerTag)
                 .ConfigureAwait(false);
             var currentMembers = existing?.MemberIds ?? [];
-            var additions = matches.Except(currentMembers).ToArray();
-            var removals = currentMembers.Except(matches).ToArray();
+            var additions = result.MatchedIds.Except(currentMembers).ToArray();
+            var removals = currentMembers.Except(result.MatchedIds).ToArray();
             if (additions.Length != 0)
             {
                 await library.AddMembersAsync(id, additions).ConfigureAwait(false);
@@ -153,23 +74,106 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             }
             verboseLogger?.LogInformation(
                 "Collection membership for {SourceUrl}: {LibraryMatchCount} library matches from {MatchableEntryCount} entries available for matching; added {AddedCount} items, removed {RemovedCount} items (collection created: {Created})",
-                logUrl, libraryMatchCount, matchableEntryCount, additions.Length, removals.Length, existing is null);
+                result.LogLabel, libraryMatchCount, result.MatchableEntryCount, additions.Length, removals.Length, existing is null);
 
-            if (!string.IsNullOrWhiteSpace(list.Description))
+            if (!string.IsNullOrWhiteSpace(result.Description))
             {
-                await library.EnsureOverviewAsync(id, list.Description, cancellationToken).ConfigureAwait(false);
+                await library.EnsureOverviewAsync(id, result.Description, cancellationToken).ConfigureAwait(false);
             }
-            await library.EnsurePosterAsync(id, list.FaviconUrls, list.ImageUrl, cancellationToken).ConfigureAwait(false);
+            await library.EnsurePosterAsync(id, result.FaviconUrls, result.ImageUrl, cancellationToken).ConfigureAwait(false);
         }
 
-        bool BeginSource(string canonicalUrl, string? logUrl)
+        MatchedSource? ReadLocal(JellyfinQueryHandler jellyfin, JellyfinQuery? query, string? error)
         {
-            if (!syncedSources.Add(canonicalUrl))
+            if (query is null)
             {
-                verboseLogger?.LogInformation("Skipping duplicate source list {SourceUrl}", logUrl);
+                var message = $"Invalid Jellyfin library query: {error}";
+                if (reportJellyfinFailure is null) throw new ArgumentException(message);
+                reportJellyfinFailure(message);
+                return null;
+            }
+            var sourceTag = "jellyfin-query:" + Hash(query.CanonicalSource);
+            if (!BeginSource(sourceTag, sourceTag))
+            {
+                return null;
+            }
+
+            Guid[] matches;
+            try
+            {
+                matches = jellyfin.Read(query, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && reportJellyfinFailure is not null)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                reportJellyfinFailure($"Jellyfin library query failed ({sourceTag}): {ex.Message}");
+                return null;
+            }
+            return new(sourceTag, "Jellyfin", sourceTag, query.Name ?? "Jellyfin library query", query.Description,
+                [], null, matches.Length, matches);
+        }
+
+        async Task<MatchedSource?> ReadExternalAsync(string? url)
+        {
+            if (SourceListHandlerLookup.Find(handlers, url) is not { } match)
+            {
+                reportUnsupported(url!);
+                return null;
+            }
+            var (source, handler) = match;
+            var handlerTag = handler.SourceTag;
+            var canonicalSource = handler.GetCanonicalUrl(source);
+            var canonicalUrl = canonicalSource.AbsoluteUri;
+            // A personal list may be private; don't wait for the API to find out before redacting it.
+            var opaqueTag = handler is TraktHandler trakt && trakt.IsPersonalList(canonicalSource)
+                ? PrivateTraktTag(canonicalUrl) : null;
+            var logLabel = opaqueTag ?? (verboseLogger is null ? null :
+                canonicalSource.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped));
+            if (!BeginSource(canonicalUrl, logLabel))
+            {
+                return null;
+            }
+
+            SourceList list;
+            try
+            {
+                list = await handler.ReadAsync(source, cancellationToken).ConfigureAwait(false);
+            }
+            catch (SourceListReadException ex) when (ex.IsPrivateTraktFailure && reportPrivateFailure is not null)
+            {
+                reportPrivateFailure($"{opaqueTag}: {ex.Reason}");
+                return null;
+            }
+
+            var matches = list.ProviderItems.SelectMany(Keys)
+                .SelectMany(key => mediaByProvider.Value[key]).ToHashSet();
+            foreach (var movie in list.MoviesByTitleYear.Where(movie => movie.IsComplete))
+            {
+                var candidates = moviesByTitleYear.Value[movie.MatchKey()].Distinct().Take(2).ToArray();
+                if (candidates.Length == 1)
+                {
+                    matches.Add(candidates[0]);
+                }
+            }
+            // Watchlist and recommendation URLs refer to the connected account's own results.
+            var sourceTag = list.TraktAccountScopedOwner is { } owner
+                ? PrivateTraktTag($"{canonicalUrl}|{owner.ToLowerInvariant()}")
+                : list.ReadWithTraktAccount ? opaqueTag! : canonicalUrl;
+            var previousTag = opaqueTag is not null && list.TraktAccountScopedOwner is null
+                ? list.ReadWithTraktAccount ? canonicalUrl : opaqueTag
+                : null;
+            return new(sourceTag, handlerTag, logLabel, CollectionName(list, source), list.Description,
+                list.FaviconUrls, list.ImageUrl, list.ProviderItems.Count + list.MoviesByTitleYear.Count, matches, previousTag);
+        }
+
+        bool BeginSource(string deduplicationKey, string? logLabel)
+        {
+            if (!syncedSources.Add(deduplicationKey))
+            {
+                verboseLogger?.LogInformation("Skipping duplicate source list {SourceUrl}", logLabel);
                 return false;
             }
-            verboseLogger?.LogInformation("Reading source list {SourceUrl}", logUrl);
+            verboseLogger?.LogInformation("Reading source list {SourceUrl}", logLabel);
             return true;
         }
     }
@@ -180,21 +184,20 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
     private static string Hash(string source) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source)));
 
-    private static string CollectionName(SourceList list, Uri? source)
+    private static string CollectionName(SourceList list, Uri source)
     {
         if (!string.IsNullOrWhiteSpace(list.Name))
         {
             return list.Name.Trim();
         }
-        if (source is null)
-        {
-            return "Jellyfin library query";
-        }
-
         var slug = Uri.UnescapeDataString(source.Segments.Last().Trim('/'));
         var words = slug.Split([' ', '-', '_'], StringSplitOptions.RemoveEmptyEntries);
         return words.Length == 0 ? source.Host : string.Join(' ', words);
     }
+
+    private sealed record MatchedSource(string SourceTag, string HandlerTag, string? LogLabel, string Name,
+        string? Description, IReadOnlyList<Uri> FaviconUrls, Uri? ImageUrl, int MatchableEntryCount,
+        IReadOnlyCollection<Guid> MatchedIds, string? PreviousTag = null);
 
     private readonly record struct MatchKey(SourceMediaType Type, string Provider, string ProviderId);
 
