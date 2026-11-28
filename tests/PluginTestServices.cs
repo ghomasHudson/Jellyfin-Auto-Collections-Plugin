@@ -6,12 +6,13 @@ namespace MagicCollections.Tests;
 
 internal static class PluginTestServices
 {
-    public static ServiceProvider BuildProvider()
+    public static ServiceProvider BuildProvider(Action<IServiceCollection>? configure = null)
     {
         var services = new ServiceCollection();
         var dataPath = Path.Combine(Path.GetTempPath(), $"magic-collections-tests-{Guid.NewGuid():N}");
         services.AddSingleton<IApplicationPaths>(new TestApplicationPaths(dataPath));
         new ServiceRegistrator().RegisterServices(services, null!);
+        configure?.Invoke(services);
         return services.BuildServiceProvider();
     }
 
