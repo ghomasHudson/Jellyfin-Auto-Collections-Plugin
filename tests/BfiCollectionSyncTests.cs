@@ -51,14 +51,13 @@ public sealed class BfiCollectionSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task Updates_the_managed_collection_overview_from_the_BFI_Open_Graph_description()
+    public async Task Fills_a_missing_managed_collection_overview_from_the_BFI_Open_Graph_description()
     {
         RecordArticle();
         var movie = AddMedia(Title, 1997);
         var collectionId = await _library.CreateAsync("Films for a Rainy Day", "Magic Collection", ListUrl, "BFI");
         await _library.AddMembersAsync(collectionId, [movie]);
         var collection = Assert.Single(_library.ManagedCollections);
-        collection.Overview = "Earlier notes";
 
         await SyncAsync();
 
@@ -73,12 +72,13 @@ public sealed class BfiCollectionSyncTests : IDisposable
         RecordArticle(Article().Replace(
             """<meta property="og:description" content="  Film picks for thunder &amp; rain.  ">""",
             descriptionMarkup, StringComparison.Ordinal));
-        var collectionId = await _library.CreateAsync("Films for a Rainy Day", "Magic Collection", ListUrl, "BFI");
-        await _library.SetOverviewAsync(collectionId, "Earlier notes", CancellationToken.None);
+        await _library.CreateAsync("Films for a Rainy Day", "Magic Collection", ListUrl, "BFI");
+        var collection = Assert.Single(_library.ManagedCollections);
+        collection.Overview = "Earlier notes";
 
         await SyncAsync();
 
-        Assert.Equal("Earlier notes", Assert.Single(_library.ManagedCollections).Overview);
+        Assert.Equal("Earlier notes", collection.Overview);
     }
 
     [Fact]
