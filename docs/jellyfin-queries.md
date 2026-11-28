@@ -85,7 +85,7 @@ For a specific time, give an ISO 8601 timestamp with a time zone. Encode `:` as 
 | Key | What it does |
 | --- | --- |
 | `list_name` | Name a new collection; defaults to **Jellyfin library query**. To rename an existing collection, edit it in Jellyfin. |
-| `list_desc` | Set a collection's description on sync. Omitting it leaves the existing description alone. |
+| `list_desc` | Fill in a blank collection description on sync. To change a nonblank description, edit it in Jellyfin. |
 
 ## Library scope and sync behavior
 
