@@ -7,10 +7,14 @@ namespace Jellyfin.Plugin.MagicCollections.Sync;
 public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICollectionLibrary library)
 {
     internal const string ManagedCollectionTag = "Magic Collection";
+    private readonly JellyfinQueryHandler? _jellyfin;
+
+    internal CollectionSync(IEnumerable<ISourceListHandler> handlers, ICollectionLibrary library, JellyfinQueryHandler jellyfin)
+        : this(handlers, library) => _jellyfin = jellyfin;
 
     public async Task RunAsync(IEnumerable<string> urls, Action<string> reportUnsupported,
         CancellationToken cancellationToken, ILogger? verboseLogger = null,
-        Action<string>? reportPrivateFailure = null)
+        Action<string>? reportPrivateFailure = null, Action<string>? reportJellyfinFailure = null)
     {
         // Snapshot once per run. Build each index only if a source uses it.
         var media = new Lazy<LibraryMedia[]>(() => library.GetMedia().ToArray());
@@ -26,66 +30,102 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
         foreach (var url in urls)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (SourceListHandlerLookup.Find(handlers, url) is not { } match)
-            {
-                reportUnsupported(url);
-                continue;
-            }
-
-            var (source, handler) = match;
-            var canonicalSource = handler.GetCanonicalUrl(source);
-            var canonicalUrl = canonicalSource.AbsoluteUri;
-            // A personal list may be private; don't wait for the API to find out before redacting it.
-            var opaqueTag = handler is TraktHandler trakt && trakt.IsPersonalList(canonicalSource)
-                ? PrivateTraktTag(canonicalUrl) : null;
-            var logUrl = opaqueTag ?? (verboseLogger is null ? null :
-                canonicalSource.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped));
-            if (!syncedSources.Add(canonicalUrl))
-            {
-                verboseLogger?.LogInformation("Skipping duplicate source list {SourceUrl}", logUrl);
-                continue;
-            }
-
-            verboseLogger?.LogInformation("Reading source list {SourceUrl}", logUrl);
+            Uri? externalSource = null;
+            string sourceTag, handlerTag;
+            string? logUrl, previousTag = null;
             SourceList list;
-            try
+            HashSet<Guid> matches;
+            int matchableEntryCount;
+            if (_jellyfin is not null && url?.Trim() is { } localSource && JellyfinQuery.HasPrefix(localSource))
             {
-                list = await handler.ReadAsync(source, cancellationToken).ConfigureAwait(false);
-            }
-            catch (SourceListReadException ex) when (ex.IsPrivateTraktFailure && reportPrivateFailure is not null)
-            {
-                reportPrivateFailure($"{opaqueTag}: {ex.Reason}");
-                continue;
-            }
-            var matches = list.ProviderItems.SelectMany(Keys)
-                .SelectMany(key => mediaByProvider.Value[key]).ToHashSet();
-            foreach (var movie in list.MoviesByTitleYear.Where(movie => movie.IsComplete))
-            {
-                var candidates = moviesByTitleYear.Value[movie.MatchKey()].Distinct().Take(2).ToArray();
-                if (candidates.Length == 1)
+                var (query, error) = JellyfinQuery.Parse(localSource);
+                if (query is null)
                 {
-                    matches.Add(candidates[0]);
+                    var message = $"Invalid Jellyfin library query: {error}";
+                    if (reportJellyfinFailure is null) throw new ArgumentException(message);
+                    reportJellyfinFailure(message);
+                    continue;
+                }
+                sourceTag = "jellyfin-query:" + Hash(query.CanonicalSource);
+                handlerTag = "Jellyfin";
+                logUrl = sourceTag;
+                if (!BeginSource(sourceTag, logUrl))
+                {
+                    continue;
+                }
+                try
+                {
+                    matches = _jellyfin.Read(query, cancellationToken).ToHashSet();
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && reportJellyfinFailure is not null)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    reportJellyfinFailure($"Jellyfin library query failed ({sourceTag}): {ex.Message}");
+                    continue;
+                }
+                matchableEntryCount = matches.Count;
+                list = new SourceList(query.Name, [], query.Description);
+            }
+            else
+            {
+                if (SourceListHandlerLookup.Find(handlers, url) is not { } match)
+                {
+                    reportUnsupported(url!);
+                    continue;
+                }
+                var (source, handler) = match;
+                externalSource = source;
+                handlerTag = handler.SourceTag;
+                var canonicalSource = handler.GetCanonicalUrl(source);
+                var canonicalUrl = canonicalSource.AbsoluteUri;
+                // A personal list may be private; don't wait for the API to find out before redacting it.
+                var opaqueTag = handler is TraktHandler trakt && trakt.IsPersonalList(canonicalSource)
+                    ? PrivateTraktTag(canonicalUrl) : null;
+                logUrl = opaqueTag ?? (verboseLogger is null ? null :
+                    canonicalSource.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped));
+                if (!BeginSource(canonicalUrl, logUrl))
+                {
+                    continue;
+                }
+                try
+                {
+                    list = await handler.ReadAsync(source, cancellationToken).ConfigureAwait(false);
+                }
+                catch (SourceListReadException ex) when (ex.IsPrivateTraktFailure && reportPrivateFailure is not null)
+                {
+                    reportPrivateFailure($"{opaqueTag}: {ex.Reason}");
+                    continue;
+                }
+                matches = list.ProviderItems.SelectMany(Keys)
+                    .SelectMany(key => mediaByProvider.Value[key]).ToHashSet();
+                foreach (var movie in list.MoviesByTitleYear.Where(movie => movie.IsComplete))
+                {
+                    var candidates = moviesByTitleYear.Value[movie.MatchKey()].Distinct().Take(2).ToArray();
+                    if (candidates.Length == 1)
+                    {
+                        matches.Add(candidates[0]);
+                    }
+                }
+                matchableEntryCount = list.ProviderItems.Count + list.MoviesByTitleYear.Count;
+                // Watchlist and recommendation URLs refer to the connected account's own results.
+                sourceTag = list.TraktAccountScopedOwner is { } owner
+                    ? PrivateTraktTag($"{canonicalUrl}|{owner.ToLowerInvariant()}")
+                    : list.ReadWithTraktAccount ? opaqueTag! : canonicalUrl;
+                if (opaqueTag is not null && list.TraktAccountScopedOwner is null)
+                {
+                    previousTag = list.ReadWithTraktAccount ? canonicalUrl : opaqueTag;
                 }
             }
-
             cancellationToken.ThrowIfCancellationRequested();
-            var matchableEntryCount = list.ProviderItems.Count + list.MoviesByTitleYear.Count;
             var libraryMatchCount = matches.Count;
-            // Watchlist and recommendation URLs refer to the connected account's own results.
-            var sourceTag = list.TraktAccountScopedOwner is { } owner
-                ? PrivateTraktTag($"{canonicalUrl}|{owner.ToLowerInvariant()}")
-                : list.ReadWithTraktAccount ? opaqueTag! : canonicalUrl;
             var existing = library.FindByTags(sourceTag, ManagedCollectionTag);
-            if (existing is null && opaqueTag is not null && list.TraktAccountScopedOwner is null)
+            if (existing is null && previousTag is not null &&
+                library.FindByTags(previousTag, ManagedCollectionTag) is { } previous)
             {
                 // Changing the source's access mode must not create a second collection.
                 // Only migrate after successfully reading the entire list.
-                var previousTag = list.ReadWithTraktAccount ? canonicalUrl : opaqueTag;
-                if (library.FindByTags(previousTag, ManagedCollectionTag) is { } previous)
-                {
-                    await library.ReplaceTagAsync(previous.Id, previousTag, sourceTag, cancellationToken).ConfigureAwait(false);
-                    existing = previous;
-                }
+                await library.ReplaceTagAsync(previous.Id, previousTag, sourceTag, cancellationToken).ConfigureAwait(false);
+                existing = previous;
             }
 
             if (existing is null && libraryMatchCount == 0)
@@ -97,7 +137,7 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             }
 
             var id = existing?.Id ?? await library.CreateAsync(
-                CollectionName(list, source), ManagedCollectionTag, sourceTag, handler.SourceTag)
+                CollectionName(list, externalSource), ManagedCollectionTag, sourceTag, handlerTag)
                 .ConfigureAwait(false);
             var currentMembers = existing?.MemberIds ?? [];
             var additions = matches.Except(currentMembers).ToArray();
@@ -121,16 +161,34 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             }
             await library.EnsurePosterAsync(id, list.FaviconUrls, list.ImageUrl, cancellationToken).ConfigureAwait(false);
         }
+
+        bool BeginSource(string canonicalUrl, string? logUrl)
+        {
+            if (!syncedSources.Add(canonicalUrl))
+            {
+                verboseLogger?.LogInformation("Skipping duplicate source list {SourceUrl}", logUrl);
+                return false;
+            }
+            verboseLogger?.LogInformation("Reading source list {SourceUrl}", logUrl);
+            return true;
+        }
     }
 
     private static string PrivateTraktTag(string canonicalUrl) =>
-        "trakt-private:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalUrl)));
+        "trakt-private:" + Hash(canonicalUrl);
 
-    private static string CollectionName(SourceList list, Uri source)
+    private static string Hash(string source) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source)));
+
+    private static string CollectionName(SourceList list, Uri? source)
     {
         if (!string.IsNullOrWhiteSpace(list.Name))
         {
             return list.Name.Trim();
+        }
+        if (source is null)
+        {
+            return "Jellyfin library query";
         }
 
         var slug = Uri.UnescapeDataString(source.Segments.Last().Trim('/'));

@@ -37,6 +37,7 @@ New to Magic Collections? [Start with the wiki walkthrough](https://github.com/g
 - [Steven Lu Popular movies](https://github.com/sjlu/popular-movies)
 - [BFI](https://www.bfi.org.uk/articles/type/lists)
 - [Trakt lists and charts](docs/trakt.md)
+- [Jellyfin library queries](docs/jellyfin-queries.md)
 
 See the [privacy policy](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/wiki/Privacy-Policy) for what the plugin shares with Trakt and how to disconnect your account.
 
@@ -45,7 +46,6 @@ See the [privacy policy](https://github.com/ghomasHudson/Jellyfin-Magic-Collecti
 Follow these issues for the status of other sources from Jellyfin Auto Collections:
 
 - [Criterion Channel](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/18)
-- [Jellyfin library queries](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/21)
 - [ListMania](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/12)
 - [Radarr tags](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/19)
 - [Sonarr tags](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/20)

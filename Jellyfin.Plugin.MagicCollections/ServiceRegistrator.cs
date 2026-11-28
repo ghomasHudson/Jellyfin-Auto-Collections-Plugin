@@ -35,7 +35,10 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
             new TraktHandler(services.GetRequiredService<SourceListHttpClient>(),
                 services.GetRequiredService<Func<PluginConfiguration>>(), services.GetRequiredService<TraktConnection>()));
         serviceCollection.AddSingleton<ICollectionLibrary, JellyfinCollectionLibrary>();
-        serviceCollection.AddSingleton<CollectionSync>();
+        serviceCollection.AddSingleton<JellyfinQueryHandler>();
+        serviceCollection.AddSingleton(services => new CollectionSync(
+            services.GetServices<ISourceListHandler>(), services.GetRequiredService<ICollectionLibrary>(),
+            services.GetRequiredService<JellyfinQueryHandler>()));
     }
 
     private sealed class SourceListHttpClient() : HttpClient(new SocketsHttpHandler
