@@ -7,6 +7,21 @@ namespace MagicCollections.Tests;
 public sealed class ServiceRegistratorTests
 {
     [Fact]
+    public void Registers_a_Radarr_handler_that_uses_the_configured_instances()
+    {
+        using var provider = PluginTestServices.BuildProvider(new()
+        {
+            RadarrServers = [new() { BaseUrl = "https://radarr.example.com", ApiKey = "radarr-key" }],
+            SonarrServers = [new() { BaseUrl = "https://sonarr.example.com", ApiKey = "sonarr-key" }]
+        });
+        var handlers = provider.GetServices<ISourceListHandler>();
+
+        var handler = Assert.Single(handlers, h => h.Supports(new("https://radarr.example.com/watched")));
+        Assert.IsType<RadarrHandler>(handler);
+        Assert.False(handler.Supports(new("https://sonarr.example.com/watched")));
+    }
+
+    [Fact]
     public void Registers_a_Popular_Movies_handler_without_replacing_the_MDBList_handler()
     {
         var popularFeed = new Uri("https://popular-movies-data.stevenlu.com/movies.json");

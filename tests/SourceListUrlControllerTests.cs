@@ -37,4 +37,89 @@ public sealed class SourceListUrlControllerTests
 
         Assert.Equal(supported, controller.Validate(new(url)));
     }
+
+    [Theory]
+    [InlineData("https://media.example.com/Radarr/tag_name", true)]
+    [InlineData("https://MEDIA.EXAMPLE.COM:443/Radarr/family%20night", true)]
+    [InlineData("https://media.example.com/radarr/tag_name", false)]
+    [InlineData("http://media.example.com/Radarr/tag_name", false)]
+    [InlineData("https://media.example.com:9443/Radarr/tag_name", false)]
+    [InlineData("https://media.example.com.evil.invalid/Radarr/tag_name", false)]
+    [InlineData("https://media.example.com/Sonarr/tag_name", false)]
+    [InlineData("https://media.example.com/Radarr", false)]
+    [InlineData("https://media.example.com/Radarr/tag_name/", false)]
+    [InlineData("https://media.example.com/Radarr/extra/tag_name", false)]
+    [InlineData("https://media.example.com/Radarr/extra/../tag_name", false)]
+    [InlineData("https://media.example.com/Radarr/extra/%2e%2e/tag_name", false)]
+    [InlineData("https://media.example.com/Radarr//tag_name", false)]
+    [InlineData("https://media.example.com/Radarr/%20", false)]
+    [InlineData("https://media.example.com/Radarr/%0d", false)]
+    [InlineData("https://user:key@media.example.com/Radarr/tag_name", false)]
+    [InlineData("https://@media.example.com/Radarr/tag_name", false)]
+    [InlineData("https://media.example.com/Radarr/tag_name?apikey=key", false)]
+    [InlineData("https://media.example.com/Radarr/tag_name#", false)]
+    public void Radarr_source_must_identify_one_tag_at_a_configured_scheme_host_port_and_base_path(string url, bool supported)
+    {
+        using var provider = PluginTestServices.BuildProvider(new()
+        {
+            RadarrServers = [new() { BaseUrl = "https://media.example.com/Radarr/", ApiKey = "example-key" }],
+            SonarrServers = [new() { BaseUrl = "https://media.example.com/Sonarr/", ApiKey = "other-key" }]
+        });
+        var controller = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
+
+        Assert.Equal(supported, controller.Validate(new(url)));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Radarr_source_rejects_duplicate_normalized_bases_even_across_services(bool acrossServices)
+    {
+        var first = new ArrServerConfiguration { BaseUrl = "https://media.example.com/Radarr", ApiKey = "first-key" };
+        var duplicate = new ArrServerConfiguration { BaseUrl = "https://MEDIA.example.com:443/Radarr/", ApiKey = "second-key" };
+        using var provider = PluginTestServices.BuildProvider(new()
+        {
+            RadarrServers = acrossServices ? [first] : [first, duplicate],
+            SonarrServers = acrossServices ? [duplicate] : []
+        });
+        var controller = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
+
+        Assert.False(controller.Validate(new("https://media.example.com/Radarr/tag_name")));
+    }
+
+    [Theory]
+    [InlineData("https://admin:password@media.example.com/Radarr", "example-key")]
+    [InlineData("https://media.example.com/Radarr?apikey=example-key", "example-key")]
+    [InlineData("https://media.example.com/Radarr#example-key", "example-key")]
+    [InlineData("https://media.example.com/Radarr", "")]
+    [InlineData("https://media.example.com/Radarr", "invalid\r\nkey")]
+    public void A_base_or_key_that_cannot_be_used_safely_does_not_enable_a_saved_source(string baseUrl, string key)
+    {
+        using var provider = PluginTestServices.BuildProvider(new()
+        {
+            RadarrServers = [new() { BaseUrl = baseUrl, ApiKey = key }]
+        });
+        var controller = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
+
+        Assert.False(controller.Validate(new("https://media.example.com/Radarr/tag_name")));
+    }
+
+    [Fact]
+    public void Draft_URL_checks_only_need_bases_and_do_not_fall_back_to_removed_saved_pairs()
+    {
+        const string old = "https://old-radarr.example.com";
+        const string draft = "https://new-radarr.example.com/Radarr";
+        using var provider = PluginTestServices.BuildProvider(new()
+        {
+            RadarrServers = [new() { BaseUrl = old, ApiKey = "saved-key" }]
+        });
+        var controller = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
+
+        Assert.True(controller.Validate(new(old + "/tag_name")));
+        Assert.False(controller.Validate(new(old + "/tag_name", [draft], [])));
+        Assert.True(controller.Validate(new(draft + "/tag_name", [draft], [])));
+        Assert.False(controller.Validate(new(draft + "/extra/tag_name", [draft], [])));
+        Assert.False(controller.Validate(new(draft + "/tag_name", [draft], [draft + "/"])));
+        Assert.True(controller.Validate(new("https://letterboxd.com/example/list/movies/", [draft], [])));
+    }
 }

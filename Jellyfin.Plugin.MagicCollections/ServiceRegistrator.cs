@@ -34,6 +34,9 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ISourceListHandler>(services =>
             new TraktHandler(services.GetRequiredService<SourceListHttpClient>(),
                 services.GetRequiredService<Func<PluginConfiguration>>(), services.GetRequiredService<TraktConnection>()));
+        serviceCollection.AddSingleton<ISourceListHandler>(services =>
+            new RadarrHandler(services.GetRequiredService<SourceListHttpClient>(),
+                services.GetRequiredService<Func<PluginConfiguration>>()));
         serviceCollection.AddSingleton<ICollectionLibrary, JellyfinCollectionLibrary>();
         serviceCollection.AddSingleton<CollectionSync>();
     }

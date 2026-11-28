@@ -60,6 +60,38 @@ public sealed class PluginConfigurationTests : IDisposable
     }
 
     [Fact]
+    public void Saving_settings_round_trips_each_arr_service_pair_separately_from_source_URLs()
+    {
+        const string source = "https://radarr.example.com/family-movies";
+        var plugin = CreatePlugin();
+        IHasPluginConfiguration configuredPlugin = plugin;
+        using var update = JsonDocument.Parse($$"""
+            {
+              "RadarrServers": [
+                { "BaseUrl": "https://radarr.example.com", "ApiKey": "radarr-key" },
+                { "BaseUrl": "http://localhost:7878/radarr", "ApiKey": "local-radarr-key" }
+              ],
+              "SonarrServers": [{ "BaseUrl": "https://sonarr.example.com", "ApiKey": "sonarr-key" }],
+              "SourceUrls": ["{{source}}"]
+            }
+            """);
+        var config = Assert.IsType<PluginConfiguration>(
+            update.Deserialize(configuredPlugin.ConfigurationType, JsonDefaults.Options));
+
+        configuredPlugin.UpdateConfiguration(config);
+        var reloaded = JsonSerializer.SerializeToElement(CreatePlugin().Configuration, JsonDefaults.PascalCaseOptions);
+
+        Assert.Equal(source, Assert.Single(reloaded.GetProperty("SourceUrls").EnumerateArray()).GetString());
+        Assert.Equal(
+            [("https://radarr.example.com", "radarr-key"), ("http://localhost:7878/radarr", "local-radarr-key")],
+            Pairs(reloaded.GetProperty("RadarrServers")));
+        Assert.Equal([("https://sonarr.example.com", "sonarr-key")], Pairs(reloaded.GetProperty("SonarrServers")));
+
+        static IEnumerable<(string?, string?)> Pairs(JsonElement servers) => servers.EnumerateArray()
+            .Select(server => (server.GetProperty("BaseUrl").GetString(), server.GetProperty("ApiKey").GetString()));
+    }
+
+    [Fact]
     public async Task Sync_logs_unsupported_URLs_without_userinfo_query_or_fragment()
     {
         var plugin = CreatePlugin();

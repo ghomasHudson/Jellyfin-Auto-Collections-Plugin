@@ -22,7 +22,7 @@ const profile = mkdtempSync(join(tmpdir(), 'magic-collections-browser-test-'));
 try {
     const browser = spawnSync(process.env.CHROMIUM || 'chromium', [
         '--headless', '--no-first-run', '--disable-background-networking', `--user-data-dir=${profile}`,
-        '--dump-dom', '--virtual-time-budget=8000', url
+        '--dump-dom', '--virtual-time-budget=12000', url
     ], { encoding: 'utf8', timeout: 15000 });
     if (browser.error) throw browser.error;
     assert.equal(browser.status, 0, browser.stderr);
@@ -40,6 +40,12 @@ async function testPage() {
     const delayed = 'https://example.com/delayed';
     const pastedTraktList = 'https://trakt.tv/users/Justin/lists/OPEN-YOUR-EYES/?access_token=example-token#example-fragment';
     const cleanTraktList = 'https://app.trakt.tv/users/justin/lists/open-your-eyes';
+    const radarr = 'https://radarr.example.com/radarr';
+    const anotherRadarr = 'https://another.example.com';
+    const sonarr = 'https://sonarr.example.com/sonarr';
+    const arrSource = radarr + '/movie-night';
+    const arrChecks = [];
+    let checkContainedKey = false;
     const checked = [];
     let saved = { SourceUrls: [unsupported], PosterBackgroundImage: true, PosterListName: true };
     let saveCount = 0;
@@ -83,12 +89,18 @@ async function testPage() {
                 connected = false;
                 return { Connected: false };
             }
-            const url = JSON.parse(request.data).Url;
+            const body = JSON.parse(request.data);
+            const url = body.Url;
+            checkContainedKey ||= request.data.includes('draft-key');
             checked.push(url);
             if (url === uncheckable) throw new Error('Check failed');
             if (url === delayed) {
                 pendingCheck = Promise.withResolvers();
                 return pendingCheck.promise;
+            }
+            if (url === arrSource) {
+                arrChecks.push(body);
+                return body.RadarrBaseUrls?.includes(radarr) ?? false;
             }
             return url === supported;
         }
@@ -338,6 +350,72 @@ async function testPage() {
         await until(() => status.textContent.includes('expired'), 'The expired connection status did not load.');
         if (!connect.checkVisibility() || disconnect.checkVisibility() || connect.textContent.trim() !== 'Connect Trakt') {
             throw new Error('An expired connection should show only Connect Trakt, even with a stored account.');
+        }
+
+        const arrToggle = [...form.querySelectorAll('summary')].find(summary => summary.textContent.trim() === '*arr');
+        if (!arrToggle || arrToggle.parentElement.open) throw new Error('The *arr panel should start collapsed.');
+        arrToggle.click();
+        const arrPanel = arrToggle.parentElement;
+        const bases = service => [...arrPanel.querySelectorAll('input[aria-label^="' + service + ' base URL"]')];
+        const keys = service => [...arrPanel.querySelectorAll('input[aria-label^="' + service + ' API key"]')];
+        const add = service => [...arrPanel.querySelectorAll('button')].find(button => button.textContent.trim() === 'Add ' + service + ' server');
+        if (!bases('Radarr')[0]?.checkVisibility() || !bases('Sonarr')[0]?.checkVisibility()) {
+            throw new Error('Opening *arr should show the Radarr and Sonarr sections.');
+        }
+        for (const service of ['Radarr', 'Sonarr']) {
+            const base = bases(service)[0].getBoundingClientRect();
+            const key = keys(service)[0].getBoundingClientRect();
+            if (keys(service)[0].type !== 'password' || key.left < base.right || key.top !== base.top) {
+                throw new Error('Each *arr row should have a masked API key beside its base URL.');
+            }
+        }
+        enter(field(3), arrSource);
+        await until(() => invalid(3), 'A Radarr list without a configured base should be marked unsupported.');
+        enter(bases('Radarr')[0], '  ' + radarr + '  ');
+        save.click();
+        await wait(30);
+        if (saveCount !== 8 || !arrPanel.querySelector('[role="alert"]')?.textContent) {
+            throw new Error('Saving an incomplete pair should keep the draft and explain what is missing.');
+        }
+        enter(keys('Radarr')[0], '  radarr-draft-key  ');
+        const badBase = 'https://radarr.example.com/radarr?apikey=query-draft-key';
+        enter(bases('Radarr')[0], badBase);
+        save.click();
+        await until(() => invalid(3) && arrPanel.querySelector('[role="alert"]')?.textContent.includes('without credentials'),
+            'A base URL with a query string should not be saved.');
+        if (saveCount !== 8 || checkContainedKey) throw new Error('A credential in a base URL should not be sent.');
+        enter(bases('Radarr')[0], '  ' + radarr + '  ');
+        add('Radarr').click();
+        enter(bases('Radarr')[1], anotherRadarr);
+        enter(keys('Radarr')[1], 'second-radarr-draft-key');
+        enter(bases('Sonarr')[0], sonarr);
+        enter(keys('Sonarr')[0], 'sonarr-draft-key');
+        await until(() => arrChecks.at(-1)?.RadarrBaseUrls?.includes(anotherRadarr) && !invalid(3),
+            'A source URL should be rechecked against the edited base before saving.');
+        const draftCheck = arrChecks.at(-1);
+        if (checkContainedKey || Object.keys(draftCheck).sort().join() !== 'RadarrBaseUrls,SonarrBaseUrls,Url' ||
+                draftCheck.RadarrBaseUrls.join() !== [radarr, anotherRadarr].join() || draftCheck.SonarrBaseUrls.join() !== sonarr) {
+            throw new Error('A draft URL check should send only the source URL and base URLs, never API keys.');
+        }
+        save.click();
+        await until(() => saveCount === 9 && field(3)?.value === arrSource && keys('Radarr')[0]?.value === 'radarr-draft-key',
+            'Saving should persist and reload both the source URL and the Radarr settings.');
+        if (JSON.stringify(saved.RadarrServers) !== JSON.stringify([
+                { BaseUrl: radarr, ApiKey: 'radarr-draft-key' },
+                { BaseUrl: anotherRadarr, ApiKey: 'second-radarr-draft-key' }
+            ]) || JSON.stringify(saved.SonarrServers) !== JSON.stringify([{ BaseUrl: sonarr, ApiKey: 'sonarr-draft-key' }]) ||
+                keys('Sonarr')[0]?.value !== 'sonarr-draft-key') {
+            throw new Error('The configuration should keep pairs together and the services separate.');
+        }
+        arrPanel.querySelector('button[aria-label="Remove Radarr server 1"]').click();
+        arrPanel.querySelector('button[aria-label="Remove Sonarr server 1"]').click();
+        await until(() => invalid(3), 'Removing a base should recheck its source URLs.');
+        save.click();
+        await until(() => saveCount === 10 && bases('Radarr')[0]?.value === anotherRadarr,
+            'Saving should remove only the selected pairs.');
+        if (saved.RadarrServers.length !== 1 || saved.RadarrServers[0].ApiKey !== 'second-radarr-draft-key' ||
+                saved.SonarrServers.length !== 0 || !saved.SourceUrls.includes(arrSource)) {
+            throw new Error('Removing a row should not remove the other pair or its source URL.');
         }
         result.textContent = 'PASS';
     } catch (error) {
