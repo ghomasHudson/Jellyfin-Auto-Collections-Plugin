@@ -1,4 +1,10 @@
+using System.Reflection;
+using Jellyfin.Plugin.MagicCollections;
 using Jellyfin.Plugin.MagicCollections.Sync;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.Movies;
+using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Entities;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -162,6 +168,78 @@ public class CollectionSyncTests
         Assert.Equal(["Magic Collection", url, "Festival Lists", "My tag"], managed.Tags);
         Assert.Null(Assert.Single(library.ManagedCollections, c => c.Id == urlOnlyId).PosterTitle);
         Assert.Null(Assert.Single(library.ManagedCollections, c => c.Id == otherListId).PosterTitle);
+    }
+
+    [Fact]
+    public async Task Keeps_a_manually_edited_managed_collection_overview()
+    {
+        const string url = "https://lists.example/festival-picks";
+        var collection = new OverviewTestCollection
+        {
+            Id = Guid.NewGuid(),
+            Tags = ["Magic Collection", url],
+            Overview = "My festival notes"
+        };
+        var sync = CreateOverviewSync(collection, "Notes from the source list");
+
+        await sync.RunAsync([url], Assert.Fail, CancellationToken.None);
+
+        Assert.Equal("My festival notes", collection.Overview);
+        Assert.Null(collection.LastUpdate);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" \t\n")]
+    public async Task Refills_a_blank_managed_collection_overview(string? blankOverview)
+    {
+        const string url = "https://lists.example/festival-picks";
+        var collection = new OverviewTestCollection
+        {
+            Id = Guid.NewGuid(),
+            Tags = ["Magic Collection", url],
+            Overview = blankOverview
+        };
+        var sync = CreateOverviewSync(collection, "Notes from the source list");
+
+        await sync.RunAsync([url], Assert.Fail, CancellationToken.None);
+
+        Assert.Equal("Notes from the source list", collection.Overview);
+        Assert.Equal(ItemUpdateType.MetadataEdit, collection.LastUpdate);
+    }
+
+    private static CollectionSync CreateOverviewSync(OverviewTestCollection collection, string? description)
+    {
+        var library = DispatchProxy.Create<ILibraryManager, OverviewTestLibrary>();
+        ((OverviewTestLibrary)(object)library).Collection = collection;
+        // This collection and source list have no members, and poster generation is disabled.
+        var adapter = new JellyfinCollectionLibrary(library, null!, null!, null!,
+            () => new() { PosterBackgroundImage = false, PosterIcon = false, PosterListName = false });
+        return new([new TestHandler(new("Festival picks", [], description))], adapter);
+    }
+
+    private sealed class OverviewTestCollection : BoxSet
+    {
+        public ItemUpdateType? LastUpdate { get; private set; }
+
+        public override Task UpdateToRepositoryAsync(ItemUpdateType updateReason, CancellationToken cancellationToken)
+        {
+            LastUpdate = updateReason;
+            return Task.CompletedTask;
+        }
+    }
+
+    private class OverviewTestLibrary : DispatchProxy
+    {
+        public OverviewTestCollection Collection { get; set; } = null!;
+
+        protected override object Invoke(MethodInfo? targetMethod, object?[]? args) => targetMethod?.Name switch
+        {
+            nameof(ILibraryManager.GetItemList) => new BaseItem[] { Collection },
+            nameof(ILibraryManager.GetItemById) when Equals(args![0], Collection.Id) => Collection,
+            _ => throw new NotSupportedException(targetMethod?.Name)
+        };
     }
 
     private sealed class TestHandler(SourceList source) : ISourceListHandler

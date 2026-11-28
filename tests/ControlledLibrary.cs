@@ -47,9 +47,14 @@ internal sealed class ControlledLibrary : ICollectionLibrary
         return Task.CompletedTask;
     }
 
-    public Task SetOverviewAsync(Guid id, string overview, CancellationToken cancellationToken)
+    public Task EnsureOverviewAsync(Guid id, string overview, CancellationToken cancellationToken)
     {
-        ManagedCollections.Single(c => c.Id == id).Overview = overview;
+        var collection = ManagedCollections.Single(c => c.Id == id);
+        if (string.IsNullOrWhiteSpace(collection.Overview))
+        {
+            collection.Overview = overview;
+        }
+
         return Task.CompletedTask;
     }
 

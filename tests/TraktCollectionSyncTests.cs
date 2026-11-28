@@ -134,14 +134,13 @@ public sealed class TraktCollectionSyncTests : IDisposable
 
     [Theory]
     [InlineData("""{"name":"Open Your Eyes","description":"  A short list.\nMovies & shows.  "}""", "A short list.\nMovies & shows.")]
-    [InlineData("""{"name":"Open Your Eyes","description":null}""", "Earlier notes")]
-    [InlineData("""{"name":"Open Your Eyes","description":"  "}""", "Earlier notes")]
-    public async Task Uses_a_nonempty_plain_list_description_for_the_managed_collection_overview(string summary, string expected)
+    [InlineData("""{"name":"Open Your Eyes","description":null}""", null)]
+    [InlineData("""{"name":"Open Your Eyes","description":"  "}""", null)]
+    public async Task Uses_a_nonempty_plain_list_description_for_a_missing_overview(string summary, string? expected)
     {
         _responses.Summary(summary);
         _responses.Page(ListItems, page: 1, limit: 50, itemCount: 1, Movies(1, 1, wrapped: true));
-        var collectionId = await _library.CreateAsync("Open Your Eyes", "Magic Collection", ListUrl, "Trakt");
-        await _library.SetOverviewAsync(collectionId, "Earlier notes", CancellationToken.None);
+        await _library.CreateAsync("Open Your Eyes", "Magic Collection", ListUrl, "Trakt");
 
         await SyncAsync(ListUrl);
 
@@ -167,7 +166,7 @@ public sealed class TraktCollectionSyncTests : IDisposable
         var previousMember = LibraryItem(SourceMediaType.Movie, "Tmdb", "9");
         var collectionId = await _library.CreateAsync("Existing collection", "Magic Collection", ListUrl, "Trakt");
         await _library.AddMembersAsync(collectionId, [previousMember]);
-        await _library.SetOverviewAsync(collectionId, "Earlier notes", CancellationToken.None);
+        Assert.Single(_library.ManagedCollections).Overview = "Earlier notes";
 
         var error = await Assert.ThrowsAsync<SourceListReadException>(() =>
             SyncAsync("https://trakt.tv/users/justin/lists/open-your-eyes/?access_token=local-token#private-fragment"));
