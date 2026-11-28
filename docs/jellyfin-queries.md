@@ -11,6 +11,9 @@ Add a query under **Source list URLs** in the Magic Collections settings. Try `j
 - Search for Asterix in titles: `jellyfin/searchTerm=Asterix&list_name=Asterix%20%26%20Obelix`
 - Collect movies from either of two Marvel studios: `jellyfin/studios=Marvel%20Studios,Marvel%20Entertainment&includeItemTypes=Movie&list_name=Studio%3A%20Marvel`
 - Select 2025 movies from one library by substituting your library ID: `jellyfin/years=2025&includeItemTypes=Movie&parentId=814be7ca-fba3-4f5a-9850-001540d06df3`
+- Find 2025 movies with a community score of at least 7.5 and a description: `jellyfin/years=2025&minCommunityRating=7.5&hasOverview=true&includeItemTypes=Movie`
+- Collect PG-13 or TV-14 titles that premiered in 2025: `jellyfin/minPremiereDate=2025-01-01&maxPremiereDate=2025-12-31T23%3A59%3A59.9999999Z&officialRatings=PG-13,TV-14`
+- Collect finished series: `jellyfin/seriesStatus=Ended`
 
 ## Query format
 
@@ -20,13 +23,53 @@ Start with `jellyfin/` and separate `Key=Value` pairs with `&`. Keys are case-in
 
 Use commas to separate list values. Each filter must match; within a list, any listed value can match.
 
+#### Titles and metadata
+
 | Key | What it does |
 | --- | --- |
 | `genres`, `tags`, `studios` | Match any of the comma-separated metadata names. |
-| `years` | Match any of the listed production years, not the year an item was added or an episode aired. |
 | `person` | Match one credited name as stored by Jellyfin, including case; any credited role counts. |
 | `searchTerm` | Use Jellyfin's title search, where `%` and `_` can match multiple titles as wildcards. |
+| `nameStartsWith`, `nameStartsWithOrGreater`, `nameLessThan` | Match a prefix, an inclusive lower bound, or an exclusive upper bound against Jellyfin's **sort title**. This title can differ from the one you see in your library. |
+| `genreIds`, `personIds`, `studioIds` | Match any of the listed Jellyfin IDs for a genre, credited person, or studio. These are alternatives to `genres`, `person`, and `studios`, respectively. Don't combine the name and ID forms of the same filter. |
+
+#### Metadata checks
+
+| Key | What it does |
+| --- | --- |
+| `hasOverview`, `hasOfficialRating` | Use `true` to require a description or content rating, respectively. Use `false` to find items missing it. |
+| `hasImdbId`, `hasTmdbId`, `hasTvdbId` | Use `true` to require that provider's ID or `false` to require its absence. |
+| `isLocked` | Use `true` for locked metadata or `false` for unlocked metadata. |
+
+#### Dates
+
+| Key | What it does |
+| --- | --- |
+| `years` | Match any of the listed production years, not the year an item was added or an episode aired. |
+| `minPremiereDate`, `maxPremiereDate` | Set inclusive bounds on the item's premiere date, not its production year or the date it joined your library. Items without a premiere date don't match. |
+| `minDateLastSaved` | Match items Jellyfin last saved on or after this date, such as after a metadata edit. This is not the date added or a user's watch date. |
+
+Use `YYYY-MM-DD` for midnight Coordinated Universal Time (UTC). A date-only upper bound includes midnight at the start of that date, not the rest of the day.
+
+For a specific time, give an ISO 8601 timestamp with a time zone. Encode `:` as `%3A` and encode the `+` of a positive offset as `%2B`. For example, `2025-01-01T00%3A00%3A00Z` and `2025-01-01T01%3A00%3A00%2B01%3A00` refer to the same instant.
+
+#### Ratings
+
+| Key | What it does |
+| --- | --- |
 | `minCriticRating` | Set a minimum critic score from 0 to 100, not a community rating. Items without a critic score don't match. |
+| `minCommunityRating` | Set a minimum community score from 0 to 10, for example `7.5`. Unrated items don't match. |
+| `officialRatings` | Match exact content rating labels, including case. Separate labels with commas (`PG-13,TV-MA`) or encoded pipes (`PG-13%7CTV-MA`). |
+
+#### Images, video and series
+
+| Key | What it does |
+| --- | --- |
+| `imageTypes` | Require at least one of the listed image types on the item. Use names such as `Primary` or `Backdrop`, not numbers. |
+| `videoTypes` | Match any of `VideoFile`, `Iso`, `Dvd`, or `BluRay` for the item's video format, not its codec or file extension. |
+| `minWidth`, `maxWidth`, `minHeight`, `maxHeight` | Set inclusive bounds, in positive whole pixels, on the item's indexed dimensions. These do not inspect individual episodes or select a video version for playback. |
+| `seriesStatus` | Match whole series with any of the listed statuses: `Continuing`, `Ended`, `Unreleased`. Movies and series without a status don't match. |
+| `hasSubtitles`, `is3D` | Use `true` or `false` to match movies with or without indexed subtitles or a 3D video format, respectively. Neither value matches whole series based on their episodes. |
 | `includeItemTypes` | Use `Movie`, `Series`, or both (the default). Individual episodes and seasons are never included. |
 
 ### Scope and selection

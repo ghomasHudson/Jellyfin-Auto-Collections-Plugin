@@ -33,7 +33,7 @@ internal sealed class JellyfinQueryHandler(ILibraryManager library)
             return [];
         }
 
-        var items = library.GetItemList(new InternalItemsQuery
+        var query = new InternalItemsQuery
         {
             // A physical library path can itself be nested under another configured path.
             AncestorIds = roots,
@@ -48,16 +48,20 @@ internal sealed class JellyfinQueryHandler(ILibraryManager library)
             Person = source.Person,
             SearchTerm = source.SearchTerm,
             StudioIds = studioIds.ToArray()
-        }, allowExternalContent: false);
+        };
+        foreach (var filter in source.AdditionalFilters)
+        {
+            filter.Apply(query);
+        }
+        var items = library.GetItemList(query, allowExternalContent: false);
 
         var ids = new HashSet<Guid>();
         foreach (var item in items)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            // Jellyfin 10.11's library repository doesn't apply MinCriticRating.
             if (item is Movie or Series && item.ExtraType is null && !item.IsShortcut && item.ChannelId == Guid.Empty &&
                 item.Path is not null && Path.IsPathFullyQualified(item.Path) &&
-                (source.MinCriticRating is not { } minimum || item.CriticRating >= minimum))
+                MatchesItemProperties(item, source))
             {
                 ids.Add(item.Id);
             }
@@ -78,6 +82,17 @@ internal sealed class JellyfinQueryHandler(ILibraryManager library)
         }
         return selected.Length <= limit ? selected : selected[..limit];
     }
+
+    // Jellyfin 10.11 ignores MinCriticRating, searches serialized text for series status and 3D,
+    // and can count non-videos as having no subtitles. Use the actual item properties before limiting.
+    private static bool MatchesItemProperties(BaseItem item, JellyfinQuery source) =>
+        (source.MinCriticRating is not { } minimum || item.CriticRating >= minimum) &&
+        (source.SeriesStatuses.Length == 0 ||
+            (item is Series { Status: { } status } && source.SeriesStatuses.Contains(status))) &&
+        ((source.HasSubtitles is null && source.Is3D is null) ||
+            (item is Video video &&
+                (source.HasSubtitles is not { } subtitles || video.HasSubtitles == subtitles) &&
+                (source.Is3D is not { } is3D || video.Is3D == is3D)));
 
     private Guid[] FindScope(Guid? parentId, CancellationToken cancellationToken)
     {

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Jellyfin.Data.Enums;
+using MediaBrowser.Model.Entities;
 
 namespace Jellyfin.Plugin.MagicCollections.Sync;
 
@@ -8,6 +9,7 @@ internal sealed class JellyfinQuery
 {
     private const string Prefix = "jellyfin/";
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+    private readonly List<JellyfinAdditionalFilter> _additionalFilters = [];
 
     public double? MinCriticRating { get; private set; }
     public string[] Tags { get; private set; } = [];
@@ -17,11 +19,15 @@ internal sealed class JellyfinQuery
     public string[] Studios { get; private set; } = [];
     public int[] Years { get; private set; } = [];
     public BaseItemKind[] ItemTypes { get; private set; } = [BaseItemKind.Movie, BaseItemKind.Series];
+    public SeriesStatus[] SeriesStatuses { get; private set; } = [];
     public Guid? ParentId { get; private set; }
     public int? Limit { get; private set; }
     public bool Random { get; private set; }
+    public bool? HasSubtitles { get; private set; }
+    public bool? Is3D { get; private set; }
     public string? Name { get; private set; }
     public string? Description { get; private set; }
+    public IReadOnlyList<JellyfinAdditionalFilter> AdditionalFilters => _additionalFilters;
 
     public static bool HasPrefix(string? source) =>
         source?.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase) == true;
@@ -34,16 +40,23 @@ internal sealed class JellyfinQuery
             var pairs = new List<string>();
             void Add(string key, string value) => pairs.Add($"{key}={Uri.EscapeDataString(value)}");
             if (Genres.Length > 0) Add("genres", string.Join(',', Genres));
+            if (HasSubtitles is { } hasSubtitles) Add("hassubtitles", hasSubtitles ? "true" : "false");
             if (ItemTypes.Length != 2) Add("includeitemtypes", ItemTypes[0].ToString());
+            if (Is3D is { } is3D) Add("is3d", is3D ? "true" : "false");
             if (Limit is { } limit) Add("limit", limit.ToString(CultureInfo.InvariantCulture));
             if (MinCriticRating is { } rating) Add("mincriticrating", rating.ToString(CultureInfo.InvariantCulture));
             if (ParentId is { } parent) Add("parentid", parent.ToString("N"));
             if (Person is not null) Add("person", Person);
             if (SearchTerm is not null) Add("searchterm", SearchTerm);
+            if (SeriesStatuses.Length > 0) Add("seriesstatus", string.Join(',', SeriesStatuses));
             if (Random && Limit is not null) Add("sortby", "Random");
             if (Studios.Length > 0) Add("studios", string.Join(',', Studios));
             if (Tags.Length > 0) Add("tags", string.Join(',', Tags));
             if (Years.Length > 0) Add("years", string.Join(',', Years.Select(year => year.ToString(CultureInfo.InvariantCulture))));
+            foreach (var filter in AdditionalFilters.OrderBy(filter => filter.Key, StringComparer.Ordinal))
+            {
+                Add(filter.Key, filter.CanonicalValue);
+            }
             return Prefix + string.Join('&', pairs);
         }
     }
@@ -122,6 +135,26 @@ internal sealed class JellyfinQuery
                     }
                     query.ItemTypes = types.Order().ToArray();
                     break;
+                case "seriesstatus":
+                    var statuses = new HashSet<SeriesStatus>();
+                    foreach (var status in SplitList(value))
+                    {
+                        if (status.Equals("Continuing", StringComparison.OrdinalIgnoreCase)) statuses.Add(SeriesStatus.Continuing);
+                        else if (status.Equals("Ended", StringComparison.OrdinalIgnoreCase)) statuses.Add(SeriesStatus.Ended);
+                        else if (status.Equals("Unreleased", StringComparison.OrdinalIgnoreCase)) statuses.Add(SeriesStatus.Unreleased);
+                        else return (null, "seriesStatus supports only Continuing, Ended and Unreleased.");
+                    }
+                    query.SeriesStatuses = statuses.Order().ToArray();
+                    break;
+                case "hassubtitles":
+                case "is3d":
+                    if (!bool.TryParse(value, out var flag))
+                    {
+                        return (null, $"'{key}' must be true or false.");
+                    }
+                    if (key == "hassubtitles") query.HasSubtitles = flag;
+                    else query.Is3D = flag;
+                    break;
                 case "parentid":
                     if (!Guid.TryParse(value, out var parent) || parent == Guid.Empty)
                     {
@@ -150,10 +183,27 @@ internal sealed class JellyfinQuery
                     query.Description = value;
                     break;
                 default:
-                    return (null, "An unsupported parameter was specified.");
+                    if (!JellyfinAdditionalFilters.Supports(key))
+                    {
+                        return (null, "An unsupported parameter was specified.");
+                    }
+                    if (!JellyfinAdditionalFilters.TryParse(key, value, out var filter))
+                    {
+                        return (null, $"Invalid value for '{key}'.");
+                    }
+                    query._additionalFilters.Add(filter);
+                    break;
             }
         }
 
+        // Name and ID forms are alternatives, especially for studios: both write StudioIds.
+        foreach (var (nameKey, idKey) in new[] { ("genres", "genreids"), ("person", "personids"), ("studios", "studioids") })
+        {
+            if (keys.Contains(nameKey) && keys.Contains(idKey))
+            {
+                return (null, $"'{nameKey}' and '{idKey}' cannot be combined.");
+            }
+        }
         return (query, null);
     }
 

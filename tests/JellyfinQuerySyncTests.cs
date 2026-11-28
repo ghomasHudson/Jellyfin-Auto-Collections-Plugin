@@ -83,6 +83,94 @@ public sealed class JellyfinQuerySyncTests
     }
 
     [Fact]
+    public async Task Community_rating_and_overview_narrow_the_scoped_movies_before_the_limit()
+    {
+        var (library, index, provider) = CreateLibrary();
+        using var services = provider;
+        var (scope, root) = index.AddLibrary();
+        var (_, otherRoot) = index.AddLibrary();
+
+        var eligible = new Movie { Name = "Eligible", CommunityRating = 7.5f, CriticRating = 30, Overview = "Summary" };
+        index.Add(new Movie { CommunityRating = 7.5f, CriticRating = 8, Overview = "Summary" }, root);
+        index.Add(new Movie { CommunityRating = 7.5f, CriticRating = 30 }, root);
+        index.Add(new Movie { CommunityRating = 5, CriticRating = 30, Overview = "Summary" }, root);
+        index.Add(new Movie { CommunityRating = 8, CriticRating = 30, Overview = "Summary" }, root, year: 2024);
+        index.Add(new Series { CommunityRating = 8, CriticRating = 30, Overview = "Summary" }, root);
+        index.Add(new Movie { CommunityRating = 8, CriticRating = 30, Overview = "Summary" }, otherRoot);
+        index.Add(eligible, root);
+
+        await services.GetRequiredService<CollectionSync>().RunAsync(
+            [$"jellyfin/parentId={scope:N}&includeItemTypes=Movie&years=2025&minCommunityRating=7.5&hasOverview=true&minCriticRating=9&limit=1"],
+            Assert.Fail, CancellationToken.None, reportJellyfinFailure: Assert.Fail);
+
+        Assert.Equal([eligible.Id], Assert.Single(library.ManagedCollections).Members);
+    }
+
+    [Fact]
+    public async Task Series_status_selects_whole_series_with_a_matching_indexed_status_before_limit()
+    {
+        var (library, index, provider) = CreateLibrary();
+        using var services = provider;
+        var (scope, root) = index.AddLibrary();
+        var (_, otherRoot) = index.AddLibrary();
+        index.Add(new Movie { Name = "Ended" }, root);
+        index.Add(new Series { Name = "Ended", Status = SeriesStatus.Unreleased }, root);
+        index.Add(new Series { Name = "Continuing" }, root);
+        index.Add(new Series { Status = SeriesStatus.Ended }, otherRoot);
+        var ended = index.Add(new Series { Name = "Finished", Status = SeriesStatus.Ended }, root);
+        var continuing = index.Add(new Series { Name = "In progress", Status = SeriesStatus.Continuing }, root);
+        var sync = services.GetRequiredService<CollectionSync>();
+
+        await sync.RunAsync([$"jellyfin/parentId={scope:N}&seriesStatus=ended,Continuing&limit=2&list_desc=Original"],
+            Assert.Fail, CancellationToken.None);
+        var collection = Assert.Single(library.ManagedCollections);
+        Assert.Equal(new[] { ended.Id, continuing.Id }.Order(), collection.Members.Order());
+
+        await sync.RunAsync([$"jellyfin/seriesStatus=CONTINUING,Ended,ended&parentId={scope:N}&limit=2&list_desc=Updated"],
+            Assert.Fail, CancellationToken.None);
+        Assert.Same(collection, Assert.Single(library.ManagedCollections));
+        Assert.Equal("Updated", collection.Overview);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Subtitles_match_the_movie_itself_not_episodes_or_non_video_items(bool hasSubtitles)
+    {
+        var (library, index, provider) = CreateLibrary();
+        using var services = provider;
+        var (_, root) = index.AddLibrary();
+        index.Add(new Series(), root);
+        index.Add(new Episode { HasSubtitles = true }, root);
+        var withSubtitles = index.Add(new Movie { HasSubtitles = true }, root);
+        var withoutSubtitles = index.Add(new Movie(), root);
+
+        await services.GetRequiredService<CollectionSync>().RunAsync(
+            [$"jellyfin/hasSubtitles={hasSubtitles}&limit=1"], Assert.Fail, CancellationToken.None);
+
+        Assert.Equal([hasSubtitles ? withSubtitles.Id : withoutSubtitles.Id],
+            Assert.Single(library.ManagedCollections).Members);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Three_dimensional_selection_checks_the_movie_video_format(bool is3D)
+    {
+        var (library, index, provider) = CreateLibrary();
+        using var services = provider;
+        var (_, root) = index.AddLibrary();
+        index.Add(new Series(), root);
+        var flat = index.Add(new Movie { Name = "3D in title only" }, root);
+        var stereo = index.Add(new Movie { Video3DFormat = Video3DFormat.FullSideBySide }, root);
+
+        await services.GetRequiredService<CollectionSync>().RunAsync(
+            [$"jellyfin/is3D={is3D}&limit=1"], Assert.Fail, CancellationToken.None);
+
+        Assert.Equal([is3D ? stereo.Id : flat.Id], Assert.Single(library.ManagedCollections).Members);
+    }
+
+    [Fact]
     public async Task Tags_person_title_and_known_studios_narrow_a_query_without_creating_studios()
     {
         var (library, index, provider) = CreateLibrary();
@@ -109,6 +197,30 @@ public sealed class JellyfinQuerySyncTests
         Assert.Single(library.ManagedCollections);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Studio_names_and_IDs_cannot_replace_each_other_in_the_same_query(bool namesFirst)
+    {
+        var (library, index, provider) = CreateLibrary();
+        using var services = provider;
+        var (_, root) = index.AddLibrary();
+        index.AddStudio("Studio A");
+        var otherStudio = index.AddStudio("Studio B");
+        index.Add(new Movie { Studios = ["Studio A"] }, root);
+        index.Add(new Movie { Studios = ["Studio B"] }, root);
+
+        var names = "studios=Studio%20A";
+        var ids = $"studioIds={otherStudio:N}";
+        var source = namesFirst ? $"jellyfin/{names}&{ids}" : $"jellyfin/{ids}&{names}";
+        var reports = new List<string>();
+        await services.GetRequiredService<CollectionSync>().RunAsync([source],
+            Assert.Fail, CancellationToken.None, reportJellyfinFailure: reports.Add);
+
+        Assert.Contains("cannot be combined", Assert.Single(reports));
+        Assert.Empty(library.ManagedCollections);
+    }
+
     [Fact]
     public async Task Equivalent_queries_reuse_membership_while_only_the_first_entry_supplies_metadata_per_run()
     {
@@ -131,6 +243,55 @@ public sealed class JellyfinQuerySyncTests
         Assert.Same(collection, Assert.Single(library.ManagedCollections));
         Assert.Equal("Original", collection.Name);
         Assert.Equal("Updated", collection.Overview);
+    }
+
+    [Fact]
+    public async Task Equivalent_extended_filters_reuse_the_same_collection()
+    {
+        var (library, index, provider) = CreateLibrary();
+        using var services = provider;
+        var (_, root) = index.AddLibrary();
+        var movie = index.Add(new Movie { CommunityRating = 8, Overview = "Summary" }, root);
+        var sync = services.GetRequiredService<CollectionSync>();
+        var first = "jellyfin/years=2025&hasOverview=TRUE&minCommunityRating=07.50&list_desc=Original";
+        var equivalent = "JELLYFIN/MINCOMMUNITYRATING=7.5&years=02025&HASoverview=%74rue&list_desc=Updated";
+
+        await sync.RunAsync([first], Assert.Fail, CancellationToken.None, reportJellyfinFailure: Assert.Fail);
+        var collection = Assert.Single(library.ManagedCollections);
+        Assert.Equal("Original", collection.Overview);
+
+        await sync.RunAsync([equivalent], Assert.Fail, CancellationToken.None, reportJellyfinFailure: Assert.Fail);
+
+        Assert.Same(collection, Assert.Single(library.ManagedCollections));
+        Assert.Equal([movie.Id], collection.Members);
+        Assert.Equal("Updated", collection.Overview);
+    }
+
+    [Theory]
+    [InlineData("minCommunityRating", "not-a-rating")]
+    [InlineData("hasOverview", "yes")]
+    [InlineData("minPremiereDate", "2025-02-30")]
+    public async Task Malformed_extended_values_are_reported_without_changing_managed_collections(string filter, string value)
+    {
+        var (library, index, provider) = CreateLibrary();
+        using var services = provider;
+        var (_, root) = index.AddLibrary();
+        var movie = index.Add(new Movie(), root);
+        var sync = services.GetRequiredService<CollectionSync>();
+        await sync.RunAsync(["jellyfin/genres=Mystery&list_desc=Original"], Assert.Fail, CancellationToken.None);
+        var collection = Assert.Single(library.ManagedCollections);
+        index.Add(new Movie(), root);
+
+        var reports = new List<string>();
+        await sync.RunAsync([$"jellyfin/genres=Mystery&{filter}={value}&list_desc=Changed"],
+            Assert.Fail, CancellationToken.None, reportJellyfinFailure: reports.Add);
+
+        var report = Assert.Single(reports);
+        Assert.StartsWith("Invalid Jellyfin library query:", report);
+        Assert.Contains(filter, report, StringComparison.OrdinalIgnoreCase);
+        Assert.Same(collection, Assert.Single(library.ManagedCollections));
+        Assert.Equal([movie.Id], collection.Members);
+        Assert.Equal("Original", collection.Overview);
     }
 
     [Fact]
@@ -243,7 +404,12 @@ public sealed class JellyfinQuerySyncTests
         private readonly Dictionary<Guid, string> _credits = [];
 
         public bool FailNextRead { get; set; }
-        public void AddStudio(string name) => _studios.Add(name, Guid.NewGuid());
+        public Guid AddStudio(string name)
+        {
+            var id = Guid.NewGuid();
+            _studios.Add(name, id);
+            return id;
+        }
         public void Credit(BaseItem item, string person) => _credits.Add(item.Id, person);
         public void ReverseOrder() => _media.Reverse();
         public void SetLibraryEnabled(Guid id, bool enabled) =>
@@ -262,7 +428,8 @@ public sealed class JellyfinQuerySyncTests
 
         public T Add<T>(T item, Guid root, int year = 2025, string[]? genres = null) where T : BaseItem
         {
-            item.Id = Guid.NewGuid();
+            // Predictable IDs make fixtures testing limited membership independent of chance.
+            item.Id = new Guid(_media.Count + 1, 0, 0, new byte[8]);
             item.Path = $"/media/{item.Id:N}";
             item.Genres = genres ?? ["Mystery"];
             item.ProductionYear = year;
@@ -310,6 +477,9 @@ public sealed class JellyfinQuerySyncTests
                 .Where(item => query.Years.Length == 0 || query.Years.Contains(item.ProductionYear!.Value))
                 .Where(item => query.IsVirtualItem is null || query.IsVirtualItem == item.IsVirtualItem)
                 .Where(item => query.IsPlaceHolder is null || query.IsPlaceHolder == (item is Video { IsPlaceHolder: true }))
+                .Where(item => query.MinCommunityRating is not { } rating || item.CommunityRating >= rating)
+                .Where(item => query.HasOverview is not { } hasOverview || hasOverview == !string.IsNullOrEmpty(item.Overview))
+                .Take(query.Limit ?? int.MaxValue)
                 .ToArray();
         }
     }
