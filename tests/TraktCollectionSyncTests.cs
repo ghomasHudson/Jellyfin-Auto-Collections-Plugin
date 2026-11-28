@@ -136,7 +136,7 @@ public sealed class TraktCollectionSyncTests : IDisposable
     [InlineData("""{"name":"Open Your Eyes","description":"  A short list.\nMovies & shows.  "}""", "A short list.\nMovies & shows.")]
     [InlineData("""{"name":"Open Your Eyes","description":null}""", null)]
     [InlineData("""{"name":"Open Your Eyes","description":"  "}""", null)]
-    public async Task Uses_a_nonempty_plain_list_description_for_a_missing_overview(string summary, string? expected)
+    public async Task Uses_a_nonempty_plain_source_list_description_for_a_missing_managed_collection_overview(string summary, string? expected)
     {
         _responses.Summary(summary);
         _responses.Page(ListItems, page: 1, limit: 50, itemCount: 1, Movies(1, 1, wrapped: true));

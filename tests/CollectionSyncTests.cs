@@ -174,13 +174,7 @@ public class CollectionSyncTests
     public async Task Keeps_a_manually_edited_managed_collection_overview()
     {
         const string url = "https://lists.example/festival-picks";
-        var collection = new OverviewTestCollection
-        {
-            Id = Guid.NewGuid(),
-            Tags = ["Magic Collection", url],
-            Overview = "My festival notes"
-        };
-        var sync = CreateOverviewSync(collection, "Notes from the source list");
+        var (sync, collection) = CreateOverviewSync(url, "My festival notes");
 
         await sync.RunAsync([url], Assert.Fail, CancellationToken.None);
 
@@ -195,13 +189,7 @@ public class CollectionSyncTests
     public async Task Refills_a_blank_managed_collection_overview(string? blankOverview)
     {
         const string url = "https://lists.example/festival-picks";
-        var collection = new OverviewTestCollection
-        {
-            Id = Guid.NewGuid(),
-            Tags = ["Magic Collection", url],
-            Overview = blankOverview
-        };
-        var sync = CreateOverviewSync(collection, "Notes from the source list");
+        var (sync, collection) = CreateOverviewSync(url, blankOverview);
 
         await sync.RunAsync([url], Assert.Fail, CancellationToken.None);
 
@@ -209,14 +197,21 @@ public class CollectionSyncTests
         Assert.Equal(ItemUpdateType.MetadataEdit, collection.LastUpdate);
     }
 
-    private static CollectionSync CreateOverviewSync(OverviewTestCollection collection, string? description)
+    private static (CollectionSync Sync, OverviewTestCollection Collection) CreateOverviewSync(string url, string? overview)
     {
+        var collection = new OverviewTestCollection
+        {
+            Id = Guid.NewGuid(),
+            Tags = ["Magic Collection", url],
+            Overview = overview
+        };
         var library = DispatchProxy.Create<ILibraryManager, OverviewTestLibrary>();
         ((OverviewTestLibrary)(object)library).Collection = collection;
         // This collection and source list have no members, and poster generation is disabled.
         var adapter = new JellyfinCollectionLibrary(library, null!, null!, null!,
             () => new() { PosterBackgroundImage = false, PosterIcon = false, PosterListName = false });
-        return new([new TestHandler(new("Festival picks", [], description))], adapter);
+        var sync = new CollectionSync([new TestHandler(new("Festival picks", [], "Notes from the source list"))], adapter);
+        return (sync, collection);
     }
 
     private sealed class OverviewTestCollection : BoxSet
