@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.0.0 (2026-11-28)
+
+### Feat
+
+- **sync**: mirror managed collections from source lists
+
 ## v0.6.0.0 (2026-11-27)
 
 ### Feat
