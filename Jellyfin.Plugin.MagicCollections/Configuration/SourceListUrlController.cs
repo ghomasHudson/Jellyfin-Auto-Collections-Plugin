@@ -11,8 +11,18 @@ namespace Jellyfin.Plugin.MagicCollections.Configuration;
 public sealed class SourceListUrlController(IEnumerable<ISourceListHandler> handlers) : ControllerBase
 {
     [HttpPost]
-    public bool Validate([FromBody] SourceListUrlRequest request) =>
-        SourceListHandlerLookup.Find(handlers, request.Url) is not null;
+    public bool Validate([FromBody] SourceListUrlRequest request)
+    {
+        if (request.ArrBaseUrls is not { } bases)
+        {
+            return SourceListHandlerLookup.Find(handlers, request.Url) is not null;
+        }
+
+        // The dashboard already has the current draft; do not look up saved *arr credentials or call an *arr API.
+        return SourceListHandlerLookup.Find(handlers, request.Url, (handler, url) => handler is ArrHandler arr
+            ? arr.SupportsDraft(url, bases)
+            : handler.Supports(url)) is not null;
+    }
 }
 
-public sealed record SourceListUrlRequest(string? Url);
+public sealed record SourceListUrlRequest(string? Url, string?[]? ArrBaseUrls = null);
