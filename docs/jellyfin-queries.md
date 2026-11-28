@@ -83,8 +83,8 @@ For a specific time, give an ISO 8601 timestamp with a time zone. Encode `:` as 
 
 | Key | What it does |
 | --- | --- |
-| `list_name` | Name a new collection; defaults to **Jellyfin library query**. To rename an existing collection, edit it in Jellyfin. |
-| `list_desc` | Fill in a blank collection description on sync. To change a nonblank description, edit it in Jellyfin. |
+| `list_name` | Name a new collection. If omitted, the plugin uses the filters and library scope to make a title such as **Mystery · 2025**. To rename an existing collection, edit it in Jellyfin. |
+| `list_desc` | Supply an overview for a collection with a blank one. If omitted, the plugin describes the filters, library scope, and any result limit. To change a nonblank overview, edit it in Jellyfin. |
 
 ## Library scope and sync behavior
 

@@ -20,9 +20,15 @@ internal sealed class ControlledLibrary : ICollectionLibrary
         ManagedCollections.SingleOrDefault(c => c.Tags.Contains(urlTag) && c.Tags.Contains(markerTag)) is { } c
             ? new(c.Id, c.Members.ToArray()) : null;
 
-    public Task<Guid> CreateAsync(string name, params string[] tags)
+    public Task<Guid> CreateAsync(string name, params string[] tags) =>
+        ((ICollectionLibrary)this).CreateAsync(name, null, tags);
+
+    Task<Guid> ICollectionLibrary.CreateAsync(string name, string? overview, params string[] tags)
     {
-        var collection = new ManagedCollection(Guid.NewGuid(), name, [.. tags], []);
+        var collection = new ManagedCollection(Guid.NewGuid(), name, [.. tags], [])
+        {
+            Overview = string.IsNullOrWhiteSpace(overview) ? null : overview
+        };
         ManagedCollections.Add(collection);
         return Task.FromResult(collection.Id);
     }

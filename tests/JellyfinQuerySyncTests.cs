@@ -51,8 +51,81 @@ public sealed class JellyfinQuerySyncTests
         await sync.RunAsync(["jellyfin/genres=Mystery&years=2025"], Assert.Fail, CancellationToken.None);
 
         var global = Assert.Single(library.ManagedCollections, c => c.Id != collection.Id);
-        Assert.Equal("Jellyfin library query", global.Name);
+        Assert.Equal("Mystery · 2025", global.Name);
+        Assert.Equal("Automatically collects movies and series from your enabled Jellyfin libraries. Filters: Genre: Mystery; Production year: 2025.",
+            global.Overview);
         Assert.Equal(new[] { noProvider.Id, series.Id, matchingCopy.Id, outsideCopy.Id }.Order(), global.Members.Order());
+    }
+
+    [Theory]
+    [InlineData("mincriticRating=09.0", "Critic Rating 9+")]
+    [InlineData("limit=3&includeItemTypes=Movie&sortBy=Random", "Movies · Up to 3 Random Picks")]
+    [InlineData("years=2025&genres=Mystery,Science+Fiction", "Mystery or Science Fiction · 2025")]
+    [InlineData("studios=Caf%C3%A9%2C+Inc.", "From Café, Inc.")]
+    [InlineData("searchTerm=Ast%C3%A9rix", "Title Search: Astérix")]
+    [InlineData("searchTerm=Asterix", "Title Search: Asterix")]
+    [InlineData("hasImdbId=false&minCommunityRating=7.50", "No IMDb ID · Community Rating 7.5+")]
+    [InlineData("seriesStatus=ended&includeItemTypes=Series", "Ended Series")]
+    [InlineData("limit=2", "Movies & Series · Up to 2")]
+    public void Collection_titles_describe_the_query(string filters, string title)
+    {
+        var query = JellyfinQuery.ParseSource("jellyfin/" + filters)?.Query;
+        Assert.NotNull(query);
+        Assert.Equal(title, query.CollectionMetadata(libraryName: null).Title);
+    }
+
+    [Fact]
+    public void Long_generated_metadata_is_shortened_without_splitting_unicode_text_elements()
+    {
+        var tag = string.Concat(Enumerable.Repeat("🎬", 700));
+        var query = JellyfinQuery.ParseSource("jellyfin/tags=" + Uri.EscapeDataString(tag))?.Query;
+        Assert.NotNull(query);
+
+        var (title, overview) = query.CollectionMetadata(libraryName: null);
+        Assert.Equal("Tagged " + string.Concat(Enumerable.Repeat("🎬", 72)) + "…", title);
+        const string prefix = "Automatically collects movies and series from your enabled Jellyfin libraries. Filters: Tagged ";
+        Assert.Equal(prefix + string.Concat(Enumerable.Repeat("🎬", 599 - prefix.Length)) + "…", overview);
+    }
+
+    [Fact]
+    public void Custom_title_does_not_suppress_generated_overview_and_custom_overview_does_not_suppress_generated_title()
+    {
+        const string source = "jellyfin/mincriticRating=9&sortBy=Random&limit=3&includeItemTypes=Movie";
+        var named = JellyfinQuery.ParseSource(source + "&list_name=Movie%20Night")?.Query;
+        var described = JellyfinQuery.ParseSource(source + "&list_desc=My%20description")?.Query;
+        Assert.NotNull(named);
+        Assert.NotNull(described);
+        Assert.Equal(named.CanonicalSource, described.CanonicalSource);
+        Assert.Equal(("Movie Night", "Automatically collects movies from your enabled Jellyfin libraries. " +
+            "Each sync picks up to 3 matches at random. Filters: Critic rating of at least 9 out of 100."),
+            named.CollectionMetadata(libraryName: null));
+        Assert.Equal(("Critic Rating 9+ · Movies · Up to 3 Random Picks", "My description"),
+            described.CollectionMetadata(libraryName: null));
+    }
+
+    [Fact]
+    public async Task New_scoped_collections_use_the_library_name_without_renaming_existing_collections()
+    {
+        var (library, index, provider) = CreateLibrary();
+        using var services = provider;
+        var (scope, root) = index.AddLibrary(name: "Family Movies");
+        var item = index.Add(new Movie(), root);
+        var sync = services.GetRequiredService<CollectionSync>();
+        var scoped = $"jellyfin/parentId={scope:N}";
+        var global = "jellyfin/genres=Mystery";
+        await sync.RunAsync([global + "&list_name=Jellyfin%20library%20query"], Assert.Fail, CancellationToken.None);
+        var existing = Assert.Single(library.ManagedCollections);
+        existing.Overview = null; // Simulate a collection created before overviews were generated.
+
+        await sync.RunAsync([scoped, global], Assert.Fail, CancellationToken.None);
+
+        var created = Assert.Single(library.ManagedCollections, collection => collection.Id != existing.Id);
+        Assert.Equal("Library: Family Movies", created.Name);
+        Assert.Equal("Automatically collects movies and series from the “Family Movies” library.", created.Overview);
+        Assert.Equal([item.Id], created.Members);
+        Assert.Equal("Jellyfin library query", existing.Name);
+        Assert.EndsWith("Filters: Genre: Mystery.", existing.Overview);
+        Assert.Equal([item.Id], existing.Members);
     }
 
     [Fact]
@@ -237,13 +310,14 @@ public sealed class JellyfinQuerySyncTests
 
         var collection = Assert.Single(library.ManagedCollections);
         Assert.Equal("Original", collection.Name);
-        Assert.Null(collection.Overview);
+        var overview = collection.Overview;
+        Assert.Contains("Genre: Mystery or Science Fiction", overview);
 
         await sync.RunAsync([equivalent], Assert.Fail, CancellationToken.None);
 
         Assert.Same(collection, Assert.Single(library.ManagedCollections));
         Assert.Equal("Original", collection.Name);
-        Assert.Equal("Updated", collection.Overview);
+        Assert.Equal(overview, collection.Overview);
     }
 
     [Theory]
@@ -261,10 +335,12 @@ public sealed class JellyfinQuerySyncTests
 
         await sync.RunAsync([$"jellyfin/{filter}=Caf%C3%A9"], Assert.Fail, CancellationToken.None);
         var collection = Assert.Single(library.ManagedCollections);
+        Assert.Contains("Café", collection.Overview);
+        var overview = collection.Overview;
         await sync.RunAsync([$"jellyfin/{filter}=CAFE&list_desc=Updated"], Assert.Fail, CancellationToken.None);
 
         Assert.Same(collection, Assert.Single(library.ManagedCollections));
-        Assert.Equal("Updated", collection.Overview);
+        Assert.Equal(overview, collection.Overview);
         Assert.Equal([movie.Id], collection.Members);
     }
 
@@ -514,11 +590,11 @@ public sealed class JellyfinQuerySyncTests
             return root;
         }
 
-        public (Guid Id, Guid Root) AddLibrary(bool enabled = true)
+        public (Guid Id, Guid Root) AddLibrary(bool enabled = true, string name = "Fixture Library")
         {
             var id = Guid.NewGuid();
             var root = Guid.NewGuid();
-            _libraries.Add(new() { ItemId = id.ToString("N"), Locations = ["/media"], LibraryOptions = new() { Enabled = enabled } });
+            _libraries.Add(new() { Name = name, ItemId = id.ToString("N"), Locations = ["/media"], LibraryOptions = new() { Enabled = enabled } });
             _folders[id] = new CollectionFolder { Id = id, PhysicalFolderIds = [root] };
             _folders[root] = new Folder { Id = root, Path = "/media" };
             return (id, root);

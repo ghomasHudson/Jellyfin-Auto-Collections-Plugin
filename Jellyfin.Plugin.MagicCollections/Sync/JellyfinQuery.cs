@@ -8,7 +8,10 @@ namespace Jellyfin.Plugin.MagicCollections.Sync;
 internal sealed class JellyfinQuery
 {
     private const string Prefix = "jellyfin/";
+    private const int MaxTitleLength = 80;
+    private const int MaxOverviewLength = 600;
     private readonly List<JellyfinNativeFilter> _nativeFilters = [];
+    private string? _studioTitle;
 
     public double? MinCriticRating { get; private set; }
     public string[] Studios { get; private set; } = [];
@@ -19,8 +22,67 @@ internal sealed class JellyfinQuery
     public bool Random { get; private set; }
     public bool? HasSubtitles { get; private set; }
     public bool? Is3D { get; private set; }
-    public string? Name { get; private set; }
-    public string? Description { get; private set; }
+    private string? Name { get; set; }
+    private string? Description { get; set; }
+
+    public (string Title, string Overview) CollectionMetadata(string? libraryName)
+    {
+        if (Name is not null && Description is not null)
+        {
+            return (Name, Description);
+        }
+
+        var filters = _nativeFilters.OrderBy(filter => filter.Key, StringComparer.Ordinal)
+            .Select(filter => (filter.Title, filter.Detail)).ToList();
+        void Add(string title, string? detail = null) => filters.Add((title, detail ?? title));
+        if (_studioTitle is not null) Add(_studioTitle);
+        if (MinCriticRating is { } score)
+        {
+            Add(FormattableString.Invariant($"Critic Rating {score}+"),
+                FormattableString.Invariant($"Critic rating of at least {score} out of 100"));
+        }
+        if (SeriesStatuses.Length > 0) Add(string.Join(" or ", SeriesStatuses) + " Series");
+        if (HasSubtitles is { } subtitles) Add(subtitles ? "With Subtitles" : "No Subtitles");
+        if (Is3D is { } is3D) Add(is3D ? "3D" : "Not 3D");
+
+        var parts = filters.Select(filter => filter.Title).ToList();
+        var media = ItemTypes.Length == 2 ? "Movies & Series" : ItemTypes[0] == BaseItemKind.Movie ? "Movies" : "Series";
+        libraryName = string.IsNullOrWhiteSpace(libraryName) ? null : libraryName.Trim();
+        if (ItemTypes.Length == 1 && SeriesStatuses.Length == 0) parts.Add(media);
+        if (libraryName is not null) parts.Add($"Library: {libraryName}");
+        if (parts.Count == 0) parts.Add(media);
+        if (Limit is { } limit)
+        {
+            var count = limit.ToString(CultureInfo.InvariantCulture);
+            parts.Add(Random ? $"Up to {count} Random Picks" : $"Up to {count}");
+        }
+        var title = Name ?? Shorten(string.Join(" · ", parts), MaxTitleLength);
+
+        var scope = libraryName is not null ? $"the “{libraryName}” library" :
+            ParentId is not null ? "the selected Jellyfin library" : "your enabled Jellyfin libraries";
+        var mediaDescription = ItemTypes.Length == 2 ? "movies and series" : media.ToLowerInvariant();
+        var overview = $"Automatically collects {mediaDescription} from {scope}.";
+        if (Limit is { } maximum)
+        {
+            var count = maximum.ToString(CultureInfo.InvariantCulture);
+            overview += Random
+                ? $" Each sync picks up to {count} matches at random."
+                : $" Includes up to {count} matches.";
+        }
+        if (filters.Count > 0)
+        {
+            overview += $" Filters: {string.Join("; ", filters.Select(filter => filter.Detail))}.";
+        }
+        return (title, Description ?? Shorten(overview, MaxOverviewLength));
+    }
+
+    private static string Shorten(string text, int maxLength)
+    {
+        var value = new StringInfo(text);
+        return value.LengthInTextElements <= maxLength
+            ? text
+            : value.SubstringByTextElements(0, maxLength - 1).TrimEnd(' ', '·') + "…";
+    }
 
     public void ApplyNativeFilters(InternalItemsQuery query)
     {
@@ -109,11 +171,14 @@ internal sealed class JellyfinQuery
                     {
                         return (null, "studios must contain non-empty names.");
                     }
-                    query.Studios = names.Select(JellyfinQueryValues.CleanMetadataName).Distinct().Order(StringComparer.Ordinal).ToArray();
+                    var studios = names.Select(name => (Name: name, Key: JellyfinQueryValues.CleanMetadataName(name)))
+                        .DistinctBy(studio => studio.Key).OrderBy(studio => studio.Key, StringComparer.Ordinal).ToArray();
+                    query.Studios = studios.Select(studio => studio.Key).ToArray();
                     if (query.Studios.Any(string.IsNullOrWhiteSpace))
                     {
                         return (null, "studios must contain non-empty names.");
                     }
+                    query._studioTitle = "From " + string.Join(" or ", studios.Select(studio => studio.Name));
                     break;
                 case "includeitemtypes":
                     if (JellyfinQueryValues.DecodeList(encoded) is not { } typeNames)

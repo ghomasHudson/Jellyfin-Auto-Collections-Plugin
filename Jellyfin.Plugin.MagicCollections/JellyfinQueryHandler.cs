@@ -10,12 +10,12 @@ namespace Jellyfin.Plugin.MagicCollections;
 
 internal sealed class JellyfinQueryHandler(ILibraryManager library, IFileSystem fileSystem)
 {
-    public Guid[] Read(JellyfinQuery source, CancellationToken cancellationToken)
+    public (Guid[] Matches, string? LibraryName) Read(JellyfinQuery source, CancellationToken cancellationToken)
     {
-        var roots = FindScope(source.ParentId, cancellationToken);
+        var (roots, libraryName) = FindScope(source.ParentId, cancellationToken);
         if (roots.Length == 0)
         {
-            return [];
+            return ([], libraryName);
         }
 
         var studioIds = new HashSet<Guid>();
@@ -31,7 +31,7 @@ internal sealed class JellyfinQueryHandler(ILibraryManager library, IFileSystem 
         }
         if (source.Studios.Length != 0 && studioIds.Count == 0)
         {
-            return [];
+            return ([], libraryName);
         }
 
         var query = new InternalItemsQuery
@@ -61,7 +61,7 @@ internal sealed class JellyfinQueryHandler(ILibraryManager library, IFileSystem 
         }
         if (source.Limit is not { } limit)
         {
-            return ids.ToArray();
+            return (ids.ToArray(), libraryName);
         }
 
         var selected = ids.ToArray();
@@ -73,7 +73,7 @@ internal sealed class JellyfinQueryHandler(ILibraryManager library, IFileSystem 
         {
             Array.Sort(selected);
         }
-        return selected.Length <= limit ? selected : selected[..limit];
+        return (selected.Length <= limit ? selected : selected[..limit], libraryName);
     }
 
     // Jellyfin 10.11 ignores MinCriticRating, searches serialized text for series status and 3D,
@@ -87,8 +87,9 @@ internal sealed class JellyfinQueryHandler(ILibraryManager library, IFileSystem 
                 (source.HasSubtitles is not { } subtitles || video.HasSubtitles == subtitles) &&
                 (source.Is3D is not { } is3D || video.Is3D == is3D)));
 
-    private Guid[] FindScope(Guid? parentId, CancellationToken cancellationToken)
+    private (Guid[] Roots, string? LibraryName) FindScope(Guid? parentId, CancellationToken cancellationToken)
     {
+        string? libraryName = null;
         var roots = new HashSet<Guid>();
         var found = false;
         foreach (var entry in library.GetVirtualFolders())
@@ -109,6 +110,10 @@ internal sealed class JellyfinQueryHandler(ILibraryManager library, IFileSystem 
                 throw new InvalidOperationException("A configured Jellyfin library isn't indexed yet.");
             }
             found = true;
+            if (parentId is not null)
+            {
+                libraryName = entry.Name;
+            }
             var physicalFolders = new List<Folder>();
             foreach (var root in folder.PhysicalFolderIds)
             {
@@ -134,6 +139,6 @@ internal sealed class JellyfinQueryHandler(ILibraryManager library, IFileSystem 
         {
             throw new InvalidOperationException("parentId does not identify an enabled, configured Jellyfin library.");
         }
-        return roots.ToArray();
+        return (roots.ToArray(), libraryName);
     }
 }

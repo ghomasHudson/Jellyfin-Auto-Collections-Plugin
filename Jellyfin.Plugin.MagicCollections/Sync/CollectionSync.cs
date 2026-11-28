@@ -58,8 +58,12 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             }
 
             var id = existing?.Id ?? await library.CreateAsync(
-                result.Name, ManagedCollectionTag, result.SourceTag, result.HandlerTag)
+                result.Name, result.Description, ManagedCollectionTag, result.SourceTag, result.HandlerTag)
                 .ConfigureAwait(false);
+            if (existing is not null && !string.IsNullOrWhiteSpace(result.Description))
+            {
+                await library.EnsureOverviewAsync(id, result.Description, cancellationToken).ConfigureAwait(false);
+            }
             var currentMembers = existing?.MemberIds ?? [];
             var additions = result.MatchedIds.Except(currentMembers).ToArray();
             var removals = currentMembers.Except(result.MatchedIds).ToArray();
@@ -76,10 +80,6 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
                 "Collection membership for {SourceUrl}: {LibraryMatchCount} library matches from {MatchableEntryCount} entries available for matching; added {AddedCount} items, removed {RemovedCount} items (collection created: {Created})",
                 result.LogLabel, libraryMatchCount, result.MatchableEntryCount, additions.Length, removals.Length, existing is null);
 
-            if (!string.IsNullOrWhiteSpace(result.Description))
-            {
-                await library.EnsureOverviewAsync(id, result.Description, cancellationToken).ConfigureAwait(false);
-            }
             await library.EnsurePosterAsync(id, result.FaviconUrls, result.ImageUrl, cancellationToken).ConfigureAwait(false);
         }
 
@@ -99,9 +99,10 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             }
 
             Guid[] matches;
+            string? libraryName;
             try
             {
-                matches = jellyfin.Read(query, cancellationToken);
+                (matches, libraryName) = jellyfin.Read(query, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && reportJellyfinFailure is not null)
             {
@@ -109,7 +110,8 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
                 reportJellyfinFailure($"Jellyfin library query failed ({sourceTag}): {ex.Message}");
                 return null;
             }
-            return new(sourceTag, "Jellyfin", sourceTag, query.Name ?? "Jellyfin library query", query.Description,
+            var (title, overview) = query.CollectionMetadata(libraryName);
+            return new(sourceTag, "Jellyfin", sourceTag, title, overview,
                 [], null, matches.Length, matches);
         }
 
