@@ -91,6 +91,67 @@ public sealed class PluginConfigurationTests : IDisposable
             .Select(server => (server.GetProperty("BaseUrl").GetString(), server.GetProperty("ApiKey").GetString()));
     }
 
+    [Theory]
+    [InlineData("https://MEDIA.example.com:443/Radarr/", "private-key", "already used")]
+    [InlineData("https://media.example.com/Radarr//proxy", "private-key", "base URL")]
+    [InlineData("https://media.example.com/proxy/%2e%2e/private-path", "private-key", "base URL")]
+    [InlineData("http://[fe80::1%25eth0]/private-path", "private-key", "base URL")]
+    [InlineData("https://media.example.com/Sonarr?apikey=private-key", "private-key", "base URL")]
+    [InlineData("https://media.example.com/Sonarr", "private-key\r\ninvalid", "API key")]
+    [InlineData("https://media.example.com/Sonarr", "", "API key")]
+    public void Saving_unusable_arr_settings_identifies_the_row_without_persisting_or_echoing_values(
+        string baseUrl, string key, string expectedProblem)
+    {
+        var plugin = CreatePlugin();
+        IHasPluginConfiguration configuredPlugin = plugin;
+        configuredPlugin.UpdateConfiguration(new PluginConfiguration { SourceUrls = ["https://example.com/previous"] });
+        var config = new PluginConfiguration
+        {
+            RadarrServers = [new() { BaseUrl = "https://media.example.com/Radarr", ApiKey = "existing-key" }],
+            SonarrServers =
+            [
+                new() { BaseUrl = "https://media.example.com/other", ApiKey = "other-key" },
+                new() { BaseUrl = baseUrl, ApiKey = key }
+            ]
+        };
+
+        var error = Assert.ThrowsAny<ArgumentException>(() => configuredPlugin.UpdateConfiguration(config));
+
+        Assert.Contains("Sonarr server 2", error.Message, StringComparison.Ordinal);
+        Assert.Contains(expectedProblem, error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("private-", error.ToString(), StringComparison.Ordinal);
+        Assert.Equal(["https://example.com/previous"], plugin.Configuration.SourceUrls);
+        Assert.Equal(["https://example.com/previous"], CreatePlugin().Configuration.SourceUrls);
+    }
+
+    [Theory]
+    [InlineData("https://MEDIA.example.com:443/Radarr/movie-night?apikey=private-query")]
+    [InlineData("https://admin:private-userinfo@media.example.com/Radarr/movie-night")]
+    [InlineData("https://@media.example.com/Radarr/movie-night")]
+    [InlineData("https://media.example.com/Radarr/movie-night#private-fragment")]
+    public void Saving_a_decorated_arr_source_rejects_it_without_persisting_or_echoing_the_URL(string source)
+    {
+        var plugin = CreatePlugin();
+        IHasPluginConfiguration configuredPlugin = plugin;
+        const string unrelated = "https://media.example.com/Radarr-archive/watch?apikey=ordinary-query";
+        var config = new PluginConfiguration
+        {
+            SourceUrls = [unrelated],
+            RadarrServers = [new() { BaseUrl = "https://media.example.com/Radarr", ApiKey = "configured-key" }]
+        };
+        configuredPlugin.UpdateConfiguration(config);
+
+        var ex = Assert.Throws<ArgumentException>(() => configuredPlugin.UpdateConfiguration(new PluginConfiguration
+        {
+            RadarrServers = config.RadarrServers,
+            SourceUrls = [unrelated, source]
+        }));
+
+        Assert.Contains("Source list URL 2", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("private-", ex.Message, StringComparison.Ordinal);
+        Assert.Equal([unrelated], CreatePlugin().Configuration.SourceUrls);
+    }
+
     [Fact]
     public async Task Sync_logs_unsupported_URLs_without_userinfo_query_or_fragment()
     {

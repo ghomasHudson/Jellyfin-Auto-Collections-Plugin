@@ -1,5 +1,4 @@
 using System.Net;
-using Jellyfin.Plugin.MagicCollections.Configuration;
 using Jellyfin.Plugin.MagicCollections.Sync;
 using Xunit;
 
@@ -10,6 +9,8 @@ public sealed class RadarrCollectionSyncTests
     private const string BaseUrl = "https://radarr.example.com:9443/Media/Radarr";
     private const string SourceUrl = BaseUrl + "/movie-night";
     private const string Key = "example-radarr-api-secret";
+    private const string TagEndpoint = BaseUrl + "/api/v3/tag";
+    private const string MovieEndpoint = BaseUrl + "/api/v3/movie";
     private const string Tags = """[{"id":12,"label":"movie-night"},{"id":3,"label":"other"}]""";
     private const string Movies = """
         [
@@ -23,7 +24,7 @@ public sealed class RadarrCollectionSyncTests
     [Fact]
     public async Task One_tag_on_a_configured_base_path_syncs_movies_by_provider_ID_in_two_reads()
     {
-        using var fixture = new RadarrFixture();
+        using var fixture = CreateFixture();
         fixture.Configuration.RadarrServers =
         [
             new() { BaseUrl = "https://radarr.example.com:9443", ApiKey = "other-radarr-key" },
@@ -43,27 +44,55 @@ public sealed class RadarrCollectionSyncTests
         Assert.Equal("movie-night", collection.Name);
         Assert.Equal(["Magic Collection", SourceUrl, "Radarr"], collection.Tags);
         Assert.Equal([tmdbMatch, imdbMatch], collection.Members);
-        Assert.Equal([(BaseUrl + "/api/v3/tag", Key), (BaseUrl + "/api/v3/movie", Key)],
-            fixture.Responses.Requests);
+        Assert.Equal([(TagEndpoint, Key), (MovieEndpoint, Key)], fixture.Requests);
+    }
+
+    [Fact]
+    public async Task A_settings_save_during_sync_takes_effect_on_the_next_run()
+    {
+        using var fixture = CreateFixture();
+        const string newKey = "updated-radarr-key";
+        var first = fixture.AddMedia(SourceMediaType.Movie, "Tmdb", "101");
+        var second = fixture.AddMedia(SourceMediaType.Movie, "Tmdb", "103");
+        fixture.Responses.Record(TagEndpoint, () =>
+        {
+            fixture.Configuration = new()
+            {
+                RadarrServers = [new() { BaseUrl = BaseUrl, ApiKey = newKey }]
+            };
+            return new(HttpStatusCode.OK) { Content = new StringContent(Tags) };
+        });
+
+        await fixture.Sync(SourceUrl, BaseUrl + "/other");
+
+        Assert.Equal([(TagEndpoint, Key), (MovieEndpoint, Key), (TagEndpoint, Key), (MovieEndpoint, Key)], fixture.Requests);
+        Assert.Collection(fixture.Library.ManagedCollections,
+            collection => Assert.Equal([first], collection.Members),
+            collection => Assert.Equal([first, second], collection.Members));
+
+        fixture.Requests.Clear();
+        await fixture.Sync(SourceUrl);
+
+        Assert.Equal([(TagEndpoint, newKey), (MovieEndpoint, newKey)], fixture.Requests);
     }
 
     [Fact]
     public async Task A_missing_tag_fails_but_an_existing_tag_with_no_movies_can_clear_the_collection()
     {
-        using var fixture = new RadarrFixture();
+        using var fixture = CreateFixture();
         var original = fixture.AddMedia(SourceMediaType.Movie, "Tmdb", "101");
         await fixture.Sync(SourceUrl);
         var collection = Assert.Single(fixture.Library.ManagedCollections);
-        fixture.Responses.Requests.Clear();
+        fixture.Requests.Clear();
 
-        fixture.Responses.TagResponse = () => RadarrResponses.Json("[]");
+        fixture.Responses.RecordBody(TagEndpoint, "[]");
         var error = await Assert.ThrowsAsync<SourceListReadException>(() => fixture.Sync(SourceUrl));
         Assert.Contains("Tag does not exist", error.Message);
         Assert.Equal([original], collection.Members);
-        Assert.Equal([(BaseUrl + "/api/v3/tag", Key)], fixture.Responses.Requests);
+        Assert.Equal([(TagEndpoint, Key)], fixture.Requests);
 
-        fixture.Responses.TagResponse = () => RadarrResponses.Json(Tags);
-        fixture.Responses.MovieResponse = () => RadarrResponses.Json("[]");
+        fixture.Responses.RecordBody(TagEndpoint, Tags);
+        fixture.Responses.RecordBody(MovieEndpoint, "[]");
         await fixture.Sync(SourceUrl);
 
         Assert.Equal(collection.Id, Assert.Single(fixture.Library.ManagedCollections).Id);
@@ -74,15 +103,17 @@ public sealed class RadarrCollectionSyncTests
     [InlineData("""[{"id":12,"label":"movie-night"},{"id":"12","label":"other"}]""")]
     [InlineData("""[{"id":12,"label":"movie-night"},{"id":13,"label":"movie-night"}]""")]
     [InlineData("""[{"id":12,"label":"movie-night"},{"id":13,"label":"\uD800"}]""")]
+    [InlineData("""[{"id":13,"id":12,"label":"movie-night"}]""")]
+    [InlineData("""[{"id":12,"label":"other","label":"movie-night"}]""")]
     public async Task A_malformed_tag_list_cannot_establish_membership(string response)
     {
-        using var fixture = new RadarrFixture();
-        fixture.Responses.TagResponse = () => RadarrResponses.Json(response);
+        using var fixture = CreateFixture();
+        fixture.Responses.RecordBody(TagEndpoint, response);
 
         var error = await Assert.ThrowsAsync<SourceListReadException>(() => fixture.Sync(SourceUrl));
 
         Assert.Contains("Invalid or incomplete", error.Message);
-        Assert.Equal([(BaseUrl + "/api/v3/tag", Key)], fixture.Responses.Requests);
+        Assert.Equal([(TagEndpoint, Key)], fixture.Requests);
         Assert.Empty(fixture.Library.ManagedCollections);
     }
 
@@ -90,17 +121,20 @@ public sealed class RadarrCollectionSyncTests
     [InlineData("""{"response":"example-radarr-api-secret"}""")]
     [InlineData("""[{"id":901,"tmdbId":101}]""")]
     [InlineData("""[{"id":901,"tmdbId":101,"tags":[12,"example-radarr-api-secret"]}]""")]
+    [InlineData("""[{"id":901,"tmdbId":101,"tags":[12],"ta\u0067s":[]}]""")]
+    [InlineData("""[{"id":901,"tmdbId":101,"tmdbId":0,"tags":[12]}]""")]
+    [InlineData("""[{"id":901,"tmdbId":0,"imdbId":"tt1020304","imdbId":null,"tags":[12]}]""")]
     [InlineData("""[{"id":901,"tags":[12]}]""")]
     [InlineData("""[{"id":901,"tmdbId":"101","tags":[12]}]""")]
     [InlineData("""[{"id":901,"tmdbId":101,"imdbId":"example-radarr-api-secret","tags":[12]}]""")]
     [InlineData("""[{"id":901,"tmdbId":101,"tags":[12]},""")]
     public async Task Malformed_or_incomplete_movies_do_not_change_the_collection_or_echo_the_body(string response)
     {
-        using var fixture = new RadarrFixture();
+        using var fixture = CreateFixture();
         var original = fixture.AddMedia(SourceMediaType.Movie, "Tmdb", "101");
         await fixture.Sync(SourceUrl);
         var collection = Assert.Single(fixture.Library.ManagedCollections);
-        fixture.Responses.MovieResponse = () => RadarrResponses.Json(response);
+        fixture.Responses.RecordBody(MovieEndpoint, response);
 
         var error = await Assert.ThrowsAsync<SourceListReadException>(() => fixture.Sync(SourceUrl));
 
@@ -115,26 +149,26 @@ public sealed class RadarrCollectionSyncTests
     [InlineData(HttpStatusCode.PartialContent)]
     public async Task A_non_successful_read_does_not_echo_the_body_or_redirect_location(HttpStatusCode status)
     {
-        using var fixture = new RadarrFixture();
-        fixture.Responses.TagResponse = () => new(status)
+        using var fixture = CreateFixture();
+        fixture.Responses.Record(TagEndpoint, () => new(status)
         {
             Content = new StringContent(Key),
             Headers = { Location = new("https://elsewhere.example/" + Key) }
-        };
+        });
 
         var error = await Assert.ThrowsAsync<SourceListReadException>(() => fixture.Sync(SourceUrl));
 
         Assert.Contains($"HTTP {(int)status}", error.Message);
         Assert.DoesNotContain(Key, error.ToString());
-        Assert.Equal([(BaseUrl + "/api/v3/tag", Key)], fixture.Responses.Requests);
+        Assert.Equal([(TagEndpoint, Key)], fixture.Requests);
         Assert.Empty(fixture.Library.ManagedCollections);
     }
 
     [Fact]
     public async Task Transport_failures_do_not_expose_request_details()
     {
-        using var fixture = new RadarrFixture();
-        fixture.Responses.TagResponse = () => throw new HttpRequestException(Key);
+        using var fixture = CreateFixture();
+        fixture.Responses.Record(TagEndpoint, () => throw new HttpRequestException(Key));
 
         var error = await Assert.ThrowsAsync<SourceListReadException>(() => fixture.Sync(SourceUrl));
 
@@ -145,63 +179,25 @@ public sealed class RadarrCollectionSyncTests
     [Fact]
     public async Task An_unconfigured_instance_is_reported_without_contacting_it_or_a_configured_server()
     {
-        using var fixture = new RadarrFixture();
+        using var fixture = CreateFixture();
         var unknown = "https://unconfigured.example.com/movie-night";
         var unsupported = new List<string>();
 
         await fixture.Engine.RunAsync([unknown], unsupported.Add, default);
 
         Assert.Equal([unknown], unsupported);
-        Assert.Empty(fixture.Responses.Requests);
+        Assert.Empty(fixture.Requests);
         Assert.Empty(fixture.Library.ManagedCollections);
     }
 
-    private sealed class RadarrFixture : IDisposable
+    private static ArrSyncFixture CreateFixture()
     {
-        public readonly PluginConfiguration Configuration = new()
+        var fixture = new ArrSyncFixture(new()
         {
             RadarrServers = [new() { BaseUrl = BaseUrl + "/", ApiKey = Key }]
-        };
-        public readonly ControlledLibrary Library = new();
-        public readonly RadarrResponses Responses = new();
-        private readonly HttpClient _http;
-
-        public RadarrFixture() => _http = new(Responses);
-
-        public CollectionSync Engine => new([new RadarrHandler(_http, () => Configuration)], Library);
-
-        public Task Sync(params string[] urls) =>
-            Engine.RunAsync(urls, url => Assert.Fail($"Unexpected unsupported URL: {url}"), default);
-
-        public Guid AddMedia(SourceMediaType type, string provider, string id)
-        {
-            var item = Guid.NewGuid();
-            Library.Media.Add(new(item, new(type, new Dictionary<string, string> { [provider] = id })));
-            return item;
-        }
-
-        public void Dispose() => _http.Dispose();
-    }
-
-    private sealed class RadarrResponses : HttpMessageHandler
-    {
-        public readonly List<(string Url, string Key)> Requests = [];
-        public Func<HttpResponseMessage> TagResponse { get; set; } = () => Json(Tags);
-        public Func<HttpResponseMessage> MovieResponse { get; set; } = () => Json(Movies);
-
-        public static HttpResponseMessage Json(string content) => new(HttpStatusCode.OK) { Content = new StringContent(content) };
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            Assert.Equal(HttpMethod.Get, request.Method);
-            var endpoint = request.RequestUri!.AbsoluteUri;
-            Requests.Add((endpoint, Assert.Single(request.Headers.GetValues("X-Api-Key"))));
-            return Task.FromResult(endpoint switch
-            {
-                BaseUrl + "/api/v3/tag" => TagResponse(),
-                BaseUrl + "/api/v3/movie" => MovieResponse(),
-                _ => throw new InvalidOperationException("Unexpected Radarr request.")
-            });
-        }
+        });
+        fixture.Responses.RecordBody(TagEndpoint, Tags);
+        fixture.Responses.RecordBody(MovieEndpoint, Movies);
+        return fixture;
     }
 }

@@ -123,6 +123,22 @@ public sealed class SourceListUrlControllerTests
     }
 
     [Fact]
+    public void A_scoped_IPv6_address_does_not_match_an_arr_server()
+    {
+        const string unscoped = "http://[fe80::1]:7878/radarr";
+        const string scoped = "http://[fe80::1%25eth0]:7878/radarr";
+        using var provider = PluginTestServices.BuildProvider(new()
+        {
+            RadarrServers = [new() { BaseUrl = unscoped, ApiKey = "saved-key" }]
+        });
+        var controller = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
+
+        Assert.True(controller.Validate(new(unscoped + "/family")));
+        Assert.False(controller.Validate(new(scoped + "/family")));
+        Assert.False(controller.Validate(new(unscoped + "/family", [scoped], [])));
+    }
+
+    [Fact]
     public void Sonarr_validation_uses_the_saved_or_draft_Sonarr_base_without_mixing_services()
     {
         const string saved = "https://media.example.com/sonarr";

@@ -19,10 +19,9 @@ public sealed class SourceListUrlController(IEnumerable<ISourceListHandler> hand
         }
 
         // The dashboard already has the current draft; do not look up saved *arr credentials or call an *arr API.
-        return Uri.TryCreate(request.Url, UriKind.Absolute, out var url) &&
-            handlers.Any(handler => handler is IArrSourceListHandler arr
-                ? ArrTagSource.SupportsDraft(url, request.RadarrBaseUrls, request.SonarrBaseUrls, arr.Service)
-                : handler.Supports(url));
+        return SourceListHandlerLookup.Find(handlers, request.Url, (handler, url) => handler is ArrHandler arr
+            ? arr.SupportsDraft(url, request.RadarrBaseUrls, request.SonarrBaseUrls)
+            : handler.Supports(url)) is not null;
     }
 }
 

@@ -6,7 +6,8 @@ namespace Jellyfin.Plugin.MagicCollections.Sync;
 
 internal static class ArrTagReader
 {
-    public static async Task<SourceList> ReadAsync(HttpClient http, ArrTagSource source, CancellationToken cancellationToken)
+    public static async Task<SourceList> ReadAsync(HttpClient http, ArrTagSource source,
+        ArrServiceDefinition definition, CancellationToken cancellationToken)
     {
         try
         {
@@ -16,8 +17,8 @@ internal static class ArrTagReader
             var labels = new HashSet<string>(StringComparer.Ordinal);
             foreach (var tag in tags.RootElement.EnumerateArray())
             {
-                if (tag.ValueKind != JsonValueKind.Object || !tag.TryGetProperty("id", out var id) ||
-                    !id.TryReadPositiveInt(out var value) || !tag.TryGetProperty("label", out var property) ||
+                if (tag.ValueKind != JsonValueKind.Object || !TryGetUniqueProperty(tag, "id", out var id) ||
+                    !id.TryReadPositiveInt(out var value) || !TryGetUniqueProperty(tag, "label", out var property) ||
                     property.ValueKind != JsonValueKind.String || ReadString(property) is not { } label ||
                     string.IsNullOrWhiteSpace(label) || label.Any(char.IsControl) || !tagIds.Add(value) || !labels.Add(label))
                 {
@@ -34,37 +35,32 @@ internal static class ArrTagReader
                 throw ReadError("Tag does not exist.");
             }
 
-            var (endpoint, mediaType, primaryField, primaryProvider) = source.Service switch
-            {
-                ArrService.Radarr => ("api/v3/movie", SourceMediaType.Movie, "tmdbId", "Tmdb"),
-                ArrService.Sonarr => ("api/v3/series", SourceMediaType.Series, "tvdbId", "Tvdb"),
-                _ => throw new InvalidOperationException("Unsupported *arr service.")
-            };
-            using var media = await ReadArrayAsync(endpoint).ConfigureAwait(false);
+            using var media = await ReadArrayAsync(definition.MediaEndpoint).ConfigureAwait(false);
             var items = new List<MediaIdentity>();
             foreach (var row in media.RootElement.EnumerateArray())
             {
                 if (HasTag(row, tagId.Value))
                 {
                     var providers = new Dictionary<string, string>();
-                    row.TryGetProperty("imdbId", out var imdb);
+                    TryGetUniqueProperty(row, "imdbId", out var imdb);
                     if (ReadImdbId(imdb) is { } imdbId)
                     {
                         providers["Imdb"] = imdbId;
                     }
-                    var suppliedPrimaryId = AddNumericId(row, primaryField, primaryProvider, providers);
-                    if (source.Service == ArrService.Sonarr)
+                    var primaryId = ReadNumericId(row, definition.PrimaryIdField);
+                    AddAvailableId(primaryId, definition.PrimaryProvider, providers);
+                    if (definition.OptionalTmdbIdField is { } optionalTmdbField)
                     {
                         // Older Sonarr versions do not include a TMDb ID.
-                        AddNumericId(row, "tmdbId", "Tmdb", providers);
+                        AddAvailableId(ReadNumericId(row, optionalTmdbField), "Tmdb", providers);
                     }
-                    if (!suppliedPrimaryId && providers.Count == 0)
+                    if (primaryId is null && providers.Count == 0)
                     {
                         throw new JsonException();
                     }
                     if (providers.Count != 0)
                     {
-                        items.Add(new(mediaType, providers));
+                        items.Add(new(definition.MediaType, providers));
                     }
                 }
             }
@@ -84,7 +80,7 @@ internal static class ArrTagReader
         }
 
         SourceListReadException ReadError(string reason, HttpStatusCode? status = null) =>
-            new(source.BaseUrl, $"{source.Service}: {reason}") { StatusCode = status };
+            new(source.BaseUrl, $"{definition.Service}: {reason}") { StatusCode = status };
 
         async Task<JsonDocument> ReadArrayAsync(string endpoint)
         {
@@ -127,8 +123,15 @@ internal static class ArrTagReader
 
     private static bool HasTag(JsonElement row, int tagId)
     {
-        if (row.ValueKind != JsonValueKind.Object || !row.TryGetProperty("tags", out var tags) ||
-            tags.ValueKind != JsonValueKind.Array)
+        if (row.ValueKind != JsonValueKind.Object || !TryGetUniqueProperty(row, "tags", out var tags))
+        {
+            throw new JsonException();
+        }
+        if (tags.ValueKind == JsonValueKind.Null)
+        {
+            return false;
+        }
+        if (tags.ValueKind != JsonValueKind.Array)
         {
             throw new JsonException();
         }
@@ -145,21 +148,45 @@ internal static class ArrTagReader
         return match;
     }
 
-    private static bool AddNumericId(JsonElement row, string field, string provider, Dictionary<string, string> providers)
+    // Zero is an explicitly unavailable ID, distinct from a missing field.
+    private static int? ReadNumericId(JsonElement row, string field)
     {
-        if (!row.TryGetProperty(field, out var value) || value.ValueKind == JsonValueKind.Null)
+        if (!TryGetUniqueProperty(row, field, out var value) || value.ValueKind == JsonValueKind.Null)
         {
-            return false;
+            return null;
         }
         if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var id) || id < 0)
         {
             throw new JsonException();
         }
-        if (id > 0)
+        return id;
+    }
+
+    private static void AddAvailableId(int? id, string provider, Dictionary<string, string> providers)
+    {
+        if (id is > 0)
         {
-            providers[provider] = id.ToString(CultureInfo.InvariantCulture);
+            providers[provider] = id.Value.ToString(CultureInfo.InvariantCulture);
         }
-        return true;
+    }
+
+    // JsonElement.TryGetProperty silently picks the last value. Reject ambiguous fields used for membership.
+    private static bool TryGetUniqueProperty(JsonElement row, string name, out JsonElement value)
+    {
+        value = default;
+        foreach (var property in row.EnumerateObject())
+        {
+            if (!property.NameEquals(name))
+            {
+                continue;
+            }
+            if (value.ValueKind != JsonValueKind.Undefined)
+            {
+                throw new JsonException();
+            }
+            value = property.Value;
+        }
+        return value.ValueKind != JsonValueKind.Undefined;
     }
 
     private static bool TryReadPositiveInt(this JsonElement element, out int value)

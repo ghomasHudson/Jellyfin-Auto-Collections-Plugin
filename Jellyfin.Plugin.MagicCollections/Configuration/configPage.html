@@ -10,7 +10,8 @@
             #magicCollectionsUrls .inputLabel {
                 display: none;
             }
-            #magicCollectionsUrls input[aria-invalid="true"] {
+            #magicCollectionsUrls input[aria-invalid="true"],
+            #magicCollectionsArr input[aria-invalid="true"] {
                 border-color: #e53935;
             }
             #magicCollectionsPage .settingsSection {
@@ -50,6 +51,7 @@
                     <p class="fieldDescription">Add URLs for supported source lists.</p>
                     <p class="fieldDescription">Sync removes titles from managed collections if they don't match the source list. It doesn't delete media from your library.</p>
                     <div id="magicCollectionsUrls" role="group" aria-labelledby="magicCollectionsUrlsHeading"></div>
+                    <p id="magicCollectionsUrlError" role="alert" hidden></p>
                     <details id="magicCollectionsArr" class="settingsSection">
                         <summary>*arr</summary>
                         <p class="fieldDescription">Enter each Radarr or Sonarr server's base URL (including any reverse proxy path) and its API key. Use a different base URL for each server. Under Source list URLs, add the base URL followed by the tag label, for example <code>https://media.example.com/radarr/family-movies</code> or <code>https://media.example.com/sonarr/family-shows</code>. Never put a key in a URL.</p>
@@ -63,7 +65,7 @@
                             <div class="arrServerRows"></div>
                             <button is="emby-button" type="button" class="raised arrAddServer">Add Sonarr server</button>
                         </section>
-                        <p role="alert"></p>
+                        <p id="magicCollectionsArrError" role="alert"></p>
                     </details>
                     <details class="settingsSection">
                         <summary>Trakt</summary>
@@ -138,6 +140,8 @@
                 const arrTemplate = page.querySelector('#magicCollectionsArrServerRow');
                 const arrSections = arrPanel.querySelectorAll('[data-arr-service]');
                 const arrError = arrPanel.querySelector('[role="alert"]');
+                const urlError = page.querySelector('#magicCollectionsUrlError');
+                const save = form.querySelector('button[type="submit"]');
                 const urlChecks = new WeakMap();
                 const checkboxOptions = form.querySelectorAll('input[type="checkbox"]');
                 const traktClientId = form.elements.TraktClientId;
@@ -149,6 +153,7 @@
                 const traktResponse = page.querySelector('#magicTraktResponse');
                 const finishTrakt = page.querySelector('#magicTraktFinish');
                 let traktBusy = false;
+                let arrRevision = 0;
 
                 function traktRequest(action, body) {
                     const request = {
@@ -253,11 +258,16 @@
                     let timer;
                     let inputRevision = 0;
                     async function checkUrl(url, requestRevision) {
+                        const bases = draftArrBases();
+                        if (isDecoratedArrSource(url, bases)) {
+                            input.setAttribute('aria-invalid', 'true');
+                            return;
+                        }
                         try {
                             const supported = await ApiClient.ajax({
                                 type: 'POST',
                                 url: ApiClient.getUrl('MagicCollections/SourceListUrl'),
-                                data: JSON.stringify({ Url: url, ...draftArrBases() }),
+                                data: JSON.stringify({ Url: url, ...bases }),
                                 contentType: 'application/json',
                                 dataType: 'json'
                             });
@@ -279,6 +289,7 @@
                     }
 
                     input.addEventListener('input', () => {
+                        clearUrlError();
                         if (row === urls.lastElementChild && input.value.trim()) {
                             addUrl();
                         }
@@ -308,6 +319,27 @@
                     });
                 }
 
+                function clearArrError() {
+                    const field = arrPanel.querySelector('input[aria-invalid="true"]');
+                    field?.removeAttribute('aria-invalid');
+                    field?.removeAttribute('aria-describedby');
+                    arrError.textContent = '';
+                }
+
+                function arrChanged() {
+                    arrRevision++;
+                    clearArrError();
+                    clearUrlError();
+                }
+
+                function showArrError(message, field) {
+                    arrPanel.open = true;
+                    arrError.textContent = message;
+                    field?.setAttribute('aria-invalid', 'true');
+                    field?.setAttribute('aria-describedby', arrError.id);
+                    field?.focus();
+                }
+
                 function addArrRow(section, server = {}) {
                     const rows = section.querySelector('.arrServerRows');
                     const row = arrTemplate.content.firstElementChild.cloneNode(true);
@@ -315,15 +347,15 @@
                     base.value = server.BaseUrl ?? '';
                     key.value = server.ApiKey ?? '';
                     base.addEventListener('input', () => {
-                        arrError.textContent = '';
+                        arrChanged();
                         recheckUrls();
                     });
-                    key.addEventListener('input', () => { arrError.textContent = ''; });
+                    key.addEventListener('input', arrChanged);
                     row.querySelector('button').addEventListener('click', () => {
                         row.remove();
                         if (!rows.children.length) addArrRow(section);
                         labelArrRows(section);
-                        arrError.textContent = '';
+                        arrChanged();
                         recheckUrls();
                     });
                     rows.appendChild(row);
@@ -336,7 +368,7 @@
                 });
 
                 function renderArrServers(config) {
-                    arrError.textContent = '';
+                    arrChanged();
                     arrSections.forEach(section => {
                         section.querySelector('.arrServerRows').textContent = '';
                         const servers = config[section.dataset.arrService + 'Servers'] || [];
@@ -348,51 +380,115 @@
                     const result = {};
                     arrSections.forEach(section => {
                         result[section.dataset.arrService + 'BaseUrls'] = Array.from(
-                            section.querySelectorAll('input[type="text"]'), input => input.value.trim()).filter(isArrBaseUrl);
+                            section.querySelectorAll('input[type="text"]'), input => input.value.trim()).filter(canCheckArrBase);
                     });
                     return result;
                 }
 
-                function isArrBaseUrl(value) {
-                    // Don't send draft base URLs containing credentials or query tokens to the checker.
-                    if (!/^https?:\/\/[^/?#@\s]+(?:\/[^?#\s]*)?$/i.test(value) || value.includes('\\')) return false;
-                    try {
-                        return Boolean(new URL(value).hostname);
-                    } catch {
-                        return false;
-                    }
+                function canCheckArrBase(value) {
+                    // Only a credential filter, not a URL parser. Server-side checks decide what is usable.
+                    return /^https?:\/\/[^/?#@\s\\]+(?:\/[^?#\s\\]*)?$/i.test(value);
                 }
 
-                function draftArrServers() {
-                    const result = {};
+                function isDecoratedArrSource(value, bases) {
+                    const authority = /^https?:\/\/([^/\\?#]*)/i.exec(value)?.[1];
+                    if (authority === undefined || (!/[?#]/.test(value) && !authority.includes('@'))) return false;
+
+                    // This is a privacy filter, not a decision that a source is supported.
+                    function matchPath(url) {
+                        return url.pathname.replace(/%[0-9a-f]{2}/gi, escape => {
+                            const character = String.fromCharCode(parseInt(escape.slice(1), 16));
+                            return /[a-z0-9._~-]/i.test(character) ? character : escape.toUpperCase();
+                        }).replace(/\/+$/, '');
+                    }
+                    let source;
+                    try { source = new URL(value); } catch { return false; }
+                    const path = matchPath(source);
+                    return Object.values(bases).flat().some(value => {
+                        if (!value) return false;
+                        let base;
+                        try { base = new URL(value); } catch { return false; }
+                        const prefix = matchPath(base) + '/';
+                        const tag = path.slice(prefix.length);
+                        return source.origin === base.origin && path.startsWith(prefix) && tag.length > 0 && !tag.includes('/');
+                    });
+                }
+
+                function clearUrlError() {
+                    urls.querySelector('[aria-describedby="' + urlError.id + '"]')?.removeAttribute('aria-describedby');
+                    urlError.hidden = true;
+                    urlError.textContent = '';
+                }
+
+                function collectSourceUrls(bases) {
+                    const values = [];
+                    for (const input of urls.querySelectorAll('input')) {
+                        const value = input.value.trim();
+                        if (!value) continue;
+                        if (isDecoratedArrSource(value, bases)) {
+                            urlError.textContent = input.getAttribute('aria-label') + ': Remove credentials, query strings, and fragments from *arr tag URLs.';
+                            urlError.hidden = false;
+                            input.setAttribute('aria-invalid', 'true');
+                            input.setAttribute('aria-describedby', urlError.id);
+                            input.focus();
+                            return null;
+                        }
+                        values.push(value);
+                    }
+                    return values;
+                }
+
+                function collectArrServers() {
+                    const servers = {};
+                    const rows = {};
+                    const bases = {};
                     for (const section of arrSections) {
                         const service = section.dataset.arrService;
-                        const servers = [];
-                        for (const row of section.querySelectorAll('.arrServerRow')) {
+                        const pairs = servers[service + 'Servers'] = [];
+                        const fields = rows[service] = [];
+                        const baseUrls = bases[service + 'BaseUrls'] = [];
+                        for (const [index, row] of [...section.querySelectorAll('.arrServerRow')].entries()) {
                             const [base, key] = row.querySelectorAll('input');
                             const BaseUrl = base.value.trim();
                             const ApiKey = key.value.trim();
                             if (!BaseUrl && !ApiKey) continue;
-                            let message;
-                            let field;
-                            if (!BaseUrl || !ApiKey) {
-                                message = 'Enter both a base URL and an API key for each ' + service + ' server, or remove the row.';
-                                field = BaseUrl ? key : base;
-                            } else if (!isArrBaseUrl(BaseUrl)) {
-                                message = 'Enter an HTTP or HTTPS ' + service + ' base URL without credentials, a query string, or a fragment.';
-                                field = base;
-                            }
-                            if (message) {
-                                arrPanel.open = true;
-                                arrError.textContent = message;
-                                field.focus();
+                            const rowLabel = service + ' server ' + (index + 1) + ': ';
+                            if (!/^[!-~]+$/.test(ApiKey)) {
+                                showArrError(rowLabel + 'Enter an API key with no spaces or non-ASCII characters.', key);
                                 return null;
                             }
-                            servers.push({ BaseUrl, ApiKey });
+                            pairs.push({ BaseUrl, ApiKey });
+                            fields.push({ base, rowLabel });
+                            // Preserve indexing without sending base URLs that may contain credentials.
+                            baseUrls.push(canCheckArrBase(BaseUrl) ? BaseUrl : null);
                         }
-                        result[service + 'Servers'] = servers;
                     }
-                    return result;
+                    return { servers, rows, bases };
+                }
+
+                async function checkArrBases(draft, revision) {
+                    if (!Object.values(draft.bases).some(bases => bases.length)) return true;
+                    let result;
+                    try {
+                        result = await ApiClient.ajax({
+                            type: 'POST',
+                            url: ApiClient.getUrl('MagicCollections/ArrServerBases'),
+                            data: JSON.stringify(draft.bases),
+                            contentType: 'application/json',
+                            dataType: 'json'
+                        });
+                    } catch {
+                        if (revision === arrRevision) showArrError('Could not check the Radarr and Sonarr settings. Try saving again.');
+                        return false;
+                    }
+                    if (revision !== arrRevision) return false;
+                    if (result.Error) {
+                        const { Service, Index, Message } = result.Error;
+                        const { base, rowLabel } = draft.rows[Service][Index];
+                        showArrError(rowLabel + Message, base);
+                        return false;
+                    }
+                    return true;
                 }
 
                 function renderUrls(values) {
@@ -428,21 +524,34 @@
                 });
                 page.addEventListener('pagehide', closeTraktHandoff);
                 // Keep a blank row from collapsing on blur before the Save click completes.
-                form.querySelector('button[type="submit"]').addEventListener('mousedown', event => event.preventDefault());
-                form.addEventListener('submit', event => {
+                save.addEventListener('mousedown', event => event.preventDefault());
+                form.addEventListener('submit', async event => {
                     event.preventDefault();
-                    const arrServers = draftArrServers();
-                    if (!arrServers) return;
-                    return withConfiguration(async config => {
-                        config.SourceUrls = Array.from(urls.querySelectorAll('input'), input => input.value.trim()).filter(Boolean);
-                        Object.assign(config, arrServers);
-                        checkboxOptions.forEach(option => { config[option.name] = option.checked; });
-                        config.TraktClientId = traktClientId.value.trim();
-                        const result = await ApiClient.updatePluginConfiguration(pluginId, config);
-                        renderConfiguration(await ApiClient.getPluginConfiguration(pluginId));
-                        refreshTraktStatus();
-                        Dashboard.processPluginConfigurationUpdateResult(result);
-                    });
+                    if (save.disabled) return;
+                    clearArrError();
+                    clearUrlError();
+                    const draft = collectArrServers();
+                    if (!draft || !collectSourceUrls(draft.bases)) return;
+                    const revision = arrRevision;
+                    save.disabled = true;
+                    try {
+                        if (!await checkArrBases(draft, revision)) return;
+                        await withConfiguration(async config => {
+                            if (revision !== arrRevision) return;
+                            const sourceUrls = collectSourceUrls(draft.bases);
+                            if (!sourceUrls) return;
+                            config.SourceUrls = sourceUrls;
+                            Object.assign(config, draft.servers);
+                            checkboxOptions.forEach(option => { config[option.name] = option.checked; });
+                            config.TraktClientId = traktClientId.value.trim();
+                            const result = await ApiClient.updatePluginConfiguration(pluginId, config);
+                            renderConfiguration(await ApiClient.getPluginConfiguration(pluginId));
+                            refreshTraktStatus();
+                            Dashboard.processPluginConfigurationUpdateResult(result);
+                        });
+                    } finally {
+                        save.disabled = false;
+                    }
                 });
             })();
         </script>

@@ -18,7 +18,9 @@ Magic Collections can mirror the movies assigned to a Radarr tag or the whole TV
 
 2. Select **Save**. To sync now, run **Sync Magic Collections** from **Scheduled Tasks**.
 
-The source list URL identifies the tag to Magic Collections. It doesn't have to open a tag page in your browser. Use the same scheme, host, port, and case-sensitive base path as your configured server. Don't put a username, password, API key, query string, or fragment in either URL. API keys are stored in the Jellyfin plugin's admin settings; protect your Jellyfin configuration and backups. Use HTTPS where possible.
+The source list URL identifies the tag to Magic Collections. It doesn't have to open a tag page in your browser. Use the same scheme, host, port, and case-sensitive base path as your configured server. Use a hostname or an address without an IPv6 zone identifier. Don't put a username, password, API key, query string, or fragment in either URL. API keys are stored in the Jellyfin plugin's admin settings; protect your Jellyfin configuration and backups. Use HTTPS where possible.
+
+If you reuse a base URL for the other service, Magic Collections treats its tags as new source lists and does not update the old service's collections.
 
 ## Supported versions
 

@@ -46,6 +46,7 @@ async function testPage() {
     const arrSource = radarr + '/movie-night';
     const sonarrSource = sonarr + '/family-shows';
     const arrChecks = [];
+    const saveChecks = [];
     let checkContainedKey = false;
     const checked = [];
     let saved = { SourceUrls: [unsupported], PosterBackgroundImage: true, PosterListName: true };
@@ -91,8 +92,18 @@ async function testPage() {
                 return { Connected: false };
             }
             const body = JSON.parse(request.data);
-            const url = body.Url;
             checkContainedKey ||= request.data.includes('draft-key');
+            if (request.url === 'MagicCollections/ArrServerBases') {
+                saveChecks.push(body);
+                if (!body.RadarrBaseUrls[0] || body.RadarrBaseUrls[0].includes('//proxy')) {
+                    return { Error: { Service: 'Radarr', Index: 0, Message: 'Enter a valid base URL without credentials or invalid path segments.' } };
+                }
+                if (body.SonarrBaseUrls.includes('https://RADARR.example.com:443/radarr/')) {
+                    return { Error: { Service: 'Sonarr', Index: 0, Message: 'This base URL is already used by another server.' } };
+                }
+                return { Error: null };
+            }
+            const url = body.Url;
             checked.push(url);
             if (url === uncheckable) throw new Error('Check failed');
             if (url === delayed) {
@@ -387,12 +398,36 @@ async function testPage() {
         await until(() => invalid(3) && arrPanel.querySelector('[role="alert"]')?.textContent.includes('without credentials'),
             'A base URL with a query string should not be saved.');
         if (saveCount !== 8 || checkContainedKey) throw new Error('A credential in a base URL should not be sent.');
+        const arrError = arrPanel.querySelector('[role="alert"]');
+        const badPath = radarr + '//proxy';
+        enter(bases('Radarr')[0], badPath);
+        save.click();
+        await until(() => arrError.textContent.includes('Radarr server 1') && arrError.textContent.includes('path segments'),
+            'Saving should explain the server’s base path rejection by row.');
+        if (saveCount !== 8 || document.activeElement !== bases('Radarr')[0] ||
+                !saveChecks.some(check => check.RadarrBaseUrls.includes(badPath))) {
+            throw new Error('The server should validate the base path and the rejected field should receive focus.');
+        }
         enter(bases('Radarr')[0], '  ' + radarr + '  ');
         add('Radarr').click();
         enter(bases('Radarr')[1], anotherRadarr);
+        enter(keys('Radarr')[1], 'second radarr-draft-key');
+        save.click();
+        await until(() => arrError.textContent.includes('Radarr server 2') && arrError.textContent.includes('API key'),
+            'Saving an unsafe API key should explain which row to fix.');
+        if (saveCount !== 8 || document.activeElement !== keys('Radarr')[1] || arrError.textContent.includes('draft-key')) {
+            throw new Error('An invalid key should not be saved or echoed in the error.');
+        }
         enter(keys('Radarr')[1], 'second-radarr-draft-key');
-        enter(bases('Sonarr')[0], sonarr);
+        enter(bases('Sonarr')[0], 'https://RADARR.example.com:443/radarr/');
         enter(keys('Sonarr')[0], 'sonarr-draft-key');
+        save.click();
+        await until(() => arrError.textContent.includes('Sonarr server 1') && arrError.textContent.includes('already used'),
+            'Saving should explain when a normalized base duplicates one from another service.');
+        if (saveCount !== 8 || document.activeElement !== bases('Sonarr')[0]) {
+            throw new Error('A duplicate base should not be saved and the rejected field should receive focus.');
+        }
+        enter(bases('Sonarr')[0], sonarr);
         await until(() => arrChecks.at(-1)?.RadarrBaseUrls?.includes(anotherRadarr) && !invalid(3) && !invalid(4),
             'Both source URLs should be rechecked against the edited bases before saving.');
         const draftCheck = arrChecks.at(-1);
@@ -400,6 +435,16 @@ async function testPage() {
                 draftCheck.RadarrBaseUrls.join() !== [radarr, anotherRadarr].join() || draftCheck.SonarrBaseUrls.join() !== sonarr) {
             throw new Error('A draft URL check should send only the source URL and base URLs, never API keys.');
         }
+        const pastedArrSource = 'https://RADARR.example.com:443/%72adarr/movie-night?apikey=pasted-draft-key';
+        enter(field(3), pastedArrSource);
+        await wait(450);
+        save.click();
+        await wait(30);
+        if (checkContainedKey || saveCount !== 8 || !invalid(3) || document.activeElement !== field(3) ||
+                !form.querySelector('#magicCollectionsUrlError')?.textContent.includes('Source list URL 3')) {
+            throw new Error('A pasted *arr URL with credentials must not be checked or saved, and Save should explain why.');
+        }
+        enter(field(3), arrSource);
         save.click();
         await until(() => saveCount === 9 && field(3)?.value === arrSource && field(4)?.value === sonarrSource &&
             keys('Radarr')[0]?.value === 'radarr-draft-key', 'Saving should persist and reload both source URLs and settings.');

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Jellyfin.Plugin.MagicCollections.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.MagicCollections.Sync;
@@ -8,10 +9,18 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
 {
     internal const string ManagedCollectionTag = "Magic Collection";
 
-    public async Task RunAsync(IEnumerable<string> urls, Action<string> reportUnsupported,
+    public Task RunAsync(IEnumerable<string> urls, Action<string> reportUnsupported,
         CancellationToken cancellationToken, ILogger? verboseLogger = null,
-        Action<string>? reportPrivateFailure = null)
+        Action<string>? reportPrivateFailure = null) =>
+        RunAsync(urls, reportUnsupported, cancellationToken, verboseLogger, reportPrivateFailure, null);
+
+    internal async Task RunAsync(IEnumerable<string> urls, Action<string> reportUnsupported,
+        CancellationToken cancellationToken, ILogger? verboseLogger,
+        Action<string>? reportPrivateFailure, PluginConfiguration? configuration)
     {
+        // Dashboard saves replace the settings object. Use the same *arr settings for selection,
+        // canonicalization and the read, even if a save lands during the run.
+        var runHandlers = handlers.Select(handler => handler is ArrHandler arr ? arr.Snapshot(configuration) : handler).ToArray();
         // Snapshot once per run. Build each index only if a source uses it.
         var media = new Lazy<LibraryMedia[]>(() => library.GetMedia().ToArray());
         var mediaByProvider = new Lazy<ILookup<MatchKey, Guid>>(() =>
@@ -21,12 +30,12 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             media.Value.Where(item => item.Identity.Type == SourceMediaType.Movie &&
                     item.MovieTitleYear is { IsComplete: true })
                 .ToLookup(item => item.MovieTitleYear!.Value.MatchKey(), item => item.Id));
-        var syncedSources = new HashSet<string>(StringComparer.Ordinal);
+        var syncedSources = new HashSet<(string Url, string? ArrServiceTag)>();
 
         foreach (var url in urls)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (SourceListHandlerLookup.Find(handlers, url) is not { } match)
+            if (SourceListHandlerLookup.Find(runHandlers, url) is not { } match)
             {
                 reportUnsupported(url);
                 continue;
@@ -40,7 +49,9 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
                 ? PrivateTraktTag(canonicalUrl) : null;
             var logUrl = opaqueTag ?? (verboseLogger is null ? null :
                 canonicalSource.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped));
-            if (!syncedSources.Add(canonicalUrl))
+            // The same URL can be reassigned to another *arr service without replacing its collection.
+            var arrServiceTag = handler is ArrHandler ? handler.SourceTag : null;
+            if (!syncedSources.Add((canonicalUrl, arrServiceTag)))
             {
                 verboseLogger?.LogInformation("Skipping duplicate source list {SourceUrl}", logUrl);
                 continue;
@@ -75,7 +86,7 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             var sourceTag = list.TraktAccountScopedOwner is { } owner
                 ? PrivateTraktTag($"{canonicalUrl}|{owner.ToLowerInvariant()}")
                 : list.ReadWithTraktAccount ? opaqueTag! : canonicalUrl;
-            var existing = library.FindByTags(sourceTag, ManagedCollectionTag);
+            var existing = library.FindByTags(sourceTag, ManagedCollectionTag, arrServiceTag);
             if (existing is null && opaqueTag is not null && list.TraktAccountScopedOwner is null)
             {
                 // Changing the source's access mode must not create a second collection.
