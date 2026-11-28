@@ -28,10 +28,6 @@ Automatically create and update Jellyfin collections from lists on sites like Le
 2. Open **Dashboard → Scheduled Tasks → Sync Magic Collections**. The default trigger is daily at 03:00 server time. Select **Run now** to run the same task immediately.
 3. If the task fails, check the Jellyfin server log.
 
-Managed collections mirror their source lists. Each successful sync removes titles that no longer match the source, including titles you added manually. This doesn't delete anything from your Jellyfin library.
-
-If no titles match, sync leaves the existing collection empty. If the source list can't be read, sync leaves the collection unchanged.
-
 ### Supported List Sources
 
 - Letterboxd - public lists (`https://letterboxd.com/official/list/letterboxds-top-500-films/`)
