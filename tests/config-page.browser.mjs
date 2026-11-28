@@ -373,10 +373,12 @@ async function testPage() {
             throw new Error('An expired connection should show only Connect Trakt, even with a stored account.');
         }
 
-        const arrToggle = [...form.querySelectorAll('summary')].find(summary => summary.textContent.trim() === '*arr');
-        if (!arrToggle || arrToggle.parentElement.open) throw new Error('The *arr panel should start collapsed.');
+        const arrPanel = form.querySelector('details#magicCollectionsArr');
+        const arrToggle = arrPanel?.querySelector('summary');
+        if (!arrToggle) throw new Error('The server panel should have a summary.');
+        if (arrPanel.open) throw new Error('The server panel should start collapsed.');
         arrToggle.click();
-        const arrPanel = arrToggle.parentElement;
+        if (!arrPanel.open) throw new Error('Clicking the summary should open the server panel.');
         const bases = () => [...arrPanel.querySelectorAll('input[aria-label$=" base URL"]')];
         const keys = () => [...arrPanel.querySelectorAll('input[aria-label$=" API key"]')];
         const testServers = arrPanel.querySelector('#magicCollectionsArrTest');
@@ -384,7 +386,7 @@ async function testPage() {
         if (!bases()[0]?.checkVisibility() || bases().length !== 1 ||
                 arrPanel.querySelector('select, [data-arr-service], .arrServerRow button') ||
                 testServers?.textContent.trim() !== 'Test servers') {
-            throw new Error('Opening *arr should show one server list without a service selector.');
+            throw new Error('Opening the server panel should show one server list without a service selector.');
         }
         testServers.click();
         if (!results.textContent.includes('Enter a server') || serverTests.length) {
@@ -399,7 +401,7 @@ async function testPage() {
         if (baseHeading?.textContent !== 'Base URL' || keyHeading?.textContent !== 'API key' ||
                 baseHeading.getBoundingClientRect().left !== baseBox.left || keyHeading.getBoundingClientRect().left !== keyBox.left ||
                 baseHeading.getBoundingClientRect().bottom > baseBox.top) {
-            throw new Error('The *arr panel should show its labels once as aligned column headings.');
+            throw new Error('The server panel should show its labels once as aligned column headings.');
         }
         enter(field(3), arrSource);
         enter(field(4), sonarrSource);
