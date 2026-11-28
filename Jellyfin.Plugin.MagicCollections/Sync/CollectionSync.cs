@@ -128,7 +128,7 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
 
             if (!string.IsNullOrWhiteSpace(list.Description))
             {
-                await library.SetOverviewAsync(id, list.Description, cancellationToken).ConfigureAwait(false);
+                await library.EnsureOverviewAsync(id, list.Description, cancellationToken).ConfigureAwait(false);
             }
             await library.EnsurePosterAsync(id, list.FaviconUrls, list.ImageUrl, cancellationToken).ConfigureAwait(false);
         }

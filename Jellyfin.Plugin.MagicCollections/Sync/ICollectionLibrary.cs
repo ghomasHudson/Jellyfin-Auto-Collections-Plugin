@@ -12,6 +12,6 @@ public interface ICollectionLibrary
     Task ReplaceTagAsync(Guid id, string oldTag, string newTag, CancellationToken cancellationToken);
     Task AddMembersAsync(Guid id, IReadOnlyCollection<Guid> memberIds);
     Task RemoveMembersAsync(Guid id, IReadOnlyCollection<Guid> memberIds);
-    Task SetOverviewAsync(Guid id, string overview, CancellationToken cancellationToken);
+    Task EnsureOverviewAsync(Guid id, string overview, CancellationToken cancellationToken);
     Task EnsurePosterAsync(Guid id, IReadOnlyList<Uri> faviconUrls, Uri? listImageUrl, CancellationToken cancellationToken);
 }

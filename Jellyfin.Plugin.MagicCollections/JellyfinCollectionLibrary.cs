@@ -80,9 +80,9 @@ internal sealed class JellyfinCollectionLibrary(
         return collection.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, cancellationToken);
     }
 
-    public Task SetOverviewAsync(Guid id, string overview, CancellationToken cancellationToken)
+    public Task EnsureOverviewAsync(Guid id, string overview, CancellationToken cancellationToken)
     {
-        if (library.GetItemById(id) is not BoxSet collection || collection.Overview == overview)
+        if (library.GetItemById(id) is not BoxSet collection || !string.IsNullOrWhiteSpace(collection.Overview))
         {
             return Task.CompletedTask;
         }

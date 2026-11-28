@@ -29,11 +29,10 @@ public sealed class LetterboxdCollectionSyncTests : IDisposable
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Refreshes_the_existing_overview_from_full_Letterboxd_list_notes_without_new_members(bool collapsed)
+    public async Task Fills_a_missing_managed_collection_overview_from_full_Letterboxd_source_list_notes(bool collapsed)
     {
         await _library.CreateAsync("My weekend films", "Magic Collection", ListUrl, "Letterboxd");
         var collection = Assert.Single(_library.ManagedCollections);
-        collection.Overview = "Earlier notes";
         const string fullText = """
             <p>Picks for <em>you</em> &amp; me.</p>
             <p>Updated every Friday.</p>
