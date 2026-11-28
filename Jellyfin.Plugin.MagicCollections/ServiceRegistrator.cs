@@ -14,6 +14,7 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
     {
         // Use a dedicated client without replacing Jellyfin's own HTTP services.
         serviceCollection.AddSingleton(_ => new SourceListHttpClient());
+        serviceCollection.AddSingleton(services => new ArrServerTester(services.GetRequiredService<SourceListHttpClient>()));
         serviceCollection.AddSingleton<ISourceListHandler>(services =>
             new MdblistHandler(services.GetRequiredService<SourceListHttpClient>()));
         serviceCollection.AddSingleton<ISourceListHandler>(services =>
@@ -34,12 +35,11 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ISourceListHandler>(services =>
             new TraktHandler(services.GetRequiredService<SourceListHttpClient>(),
                 services.GetRequiredService<Func<PluginConfiguration>>(), services.GetRequiredService<TraktConnection>()));
-        foreach (var definition in new[] { ArrServiceDefinition.Radarr, ArrServiceDefinition.Sonarr })
+        serviceCollection.AddSingleton<ISourceListHandler>(services =>
         {
-            serviceCollection.AddSingleton<ISourceListHandler>(services =>
-                new ArrHandler(services.GetRequiredService<SourceListHttpClient>(),
-                    services.GetRequiredService<Func<PluginConfiguration>>(), definition));
-        }
+            var getConfiguration = services.GetRequiredService<Func<PluginConfiguration>>();
+            return new ArrHandler(services.GetRequiredService<SourceListHttpClient>(), () => getConfiguration().ArrServers);
+        });
         serviceCollection.AddSingleton<ICollectionLibrary, JellyfinCollectionLibrary>();
         serviceCollection.AddSingleton<CollectionSync>();
     }

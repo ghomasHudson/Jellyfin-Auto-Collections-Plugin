@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,7 +13,10 @@ public sealed class ArrServerBasesController : ControllerBase
     // Dashboard preflight: report a safe row error without receiving API keys or contacting these servers.
     [HttpPost]
     public IActionResult Validate([FromBody] ArrServerBasesRequest request) =>
-        Ok(new { Error = ArrServerValidation.FindInvalidBase(request.RadarrBaseUrls, request.SonarrBaseUrls) });
+        Ok(new ArrServerBasesResponse(ArrServerValidation.FindInvalidBase(request.ArrBaseUrls)));
+
+    private sealed record ArrServerBasesResponse(
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] ArrBaseError? Error);
 }
 
-public sealed record ArrServerBasesRequest(string?[]? RadarrBaseUrls, string?[]? SonarrBaseUrls);
+public sealed record ArrServerBasesRequest(string?[]? ArrBaseUrls);

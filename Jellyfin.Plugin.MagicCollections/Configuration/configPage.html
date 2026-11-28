@@ -7,7 +7,8 @@
             #magicCollectionsUrls > .inputContainer:not(:last-child) {
                 margin-bottom: .6em;
             }
-            #magicCollectionsUrls .inputLabel {
+            #magicCollectionsUrls .inputLabel,
+            #magicCollectionsArrServers .inputLabel {
                 display: none;
             }
             #magicCollectionsUrls input[aria-invalid="true"],
@@ -24,12 +25,18 @@
             #magicCollectionsAdvanced > .checkboxContainer {
                 padding-block: .6em;
             }
-            #magicCollectionsArr .arrServerRow {
+            #magicCollectionsArr .arrServerRow,
+            #magicCollectionsArr .arrServerColumns {
                 display: grid;
-                grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
+                grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
                 align-items: end;
                 gap: .4em;
+            }
+            #magicCollectionsArr .arrServerRow {
                 margin-bottom: .6em;
+            }
+            #magicCollectionsArr .arrServerColumns {
+                margin-bottom: .25em;
             }
             #magicCollectionsArr .arrServerRow .inputContainer {
                 min-width: 0;
@@ -54,17 +61,14 @@
                     <p id="magicCollectionsUrlError" role="alert" hidden></p>
                     <details id="magicCollectionsArr" class="settingsSection">
                         <summary>*arr</summary>
-                        <p class="fieldDescription">Enter each Radarr or Sonarr server's base URL (including any reverse proxy path) and its API key. Use a different base URL for each server. Under Source list URLs, add the base URL followed by the tag label, for example <code>https://media.example.com/radarr/family-movies</code> or <code>https://media.example.com/sonarr/family-shows</code>. Never put a key in a URL.</p>
-                        <section data-arr-service="Radarr">
-                            <h3>Radarr</h3>
-                            <div class="arrServerRows"></div>
-                            <button is="emby-button" type="button" class="raised arrAddServer">Add Radarr server</button>
-                        </section>
-                        <section data-arr-service="Sonarr">
-                            <h3>Sonarr</h3>
-                            <div class="arrServerRows"></div>
-                            <button is="emby-button" type="button" class="raised arrAddServer">Add Sonarr server</button>
-                        </section>
+                        <p class="fieldDescription">Enter each server's base URL and API key. Magic Collections detects Radarr or Sonarr automatically. Include any reverse proxy path and use a different base URL for each server. Under Source list URLs, add the base URL followed by the tag label, for example <code>https://media.example.com/radarr/family-movies</code>. Never put a key in a URL.</p>
+                        <div class="arrServerColumns" aria-hidden="true">
+                            <span>Base URL</span>
+                            <span>API key</span>
+                        </div>
+                        <div id="magicCollectionsArrServers" role="group" aria-label="*arr servers"></div>
+                        <button is="emby-button" type="button" class="raised" id="magicCollectionsArrTest">Test servers</button>
+                        <div id="magicCollectionsArrResults" role="status"></div>
                         <p id="magicCollectionsArrError" role="alert"></p>
                     </details>
                     <details class="settingsSection">
@@ -119,12 +123,11 @@
                 <template id="magicCollectionsArrServerRow">
                     <div class="arrServerRow">
                         <div class="inputContainer">
-                            <input is="emby-input" type="text" label="Base URL" inputmode="url" autocapitalize="off" spellcheck="false" autocomplete="off" />
+                            <input is="emby-input" type="text" inputmode="url" autocapitalize="off" spellcheck="false" autocomplete="off" />
                         </div>
                         <div class="inputContainer">
-                            <input is="emby-input" type="password" label="API key" autocomplete="new-password" autocapitalize="off" spellcheck="false" />
+                            <input is="emby-input" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" />
                         </div>
-                        <button is="emby-button" type="button" class="raised">Remove</button>
                     </div>
                 </template>
             </div>
@@ -138,7 +141,9 @@
                 const template = page.querySelector('#magicCollectionsUrlRow');
                 const arrPanel = page.querySelector('#magicCollectionsArr');
                 const arrTemplate = page.querySelector('#magicCollectionsArrServerRow');
-                const arrSections = arrPanel.querySelectorAll('[data-arr-service]');
+                const arrRows = arrPanel.querySelector('#magicCollectionsArrServers');
+                const testServers = arrPanel.querySelector('#magicCollectionsArrTest');
+                const arrResults = arrPanel.querySelector('#magicCollectionsArrResults');
                 const arrError = arrPanel.querySelector('[role="alert"]');
                 const urlError = page.querySelector('#magicCollectionsUrlError');
                 const save = form.querySelector('button[type="submit"]');
@@ -267,7 +272,7 @@
                             const supported = await ApiClient.ajax({
                                 type: 'POST',
                                 url: ApiClient.getUrl('MagicCollections/SourceListUrl'),
-                                data: JSON.stringify({ Url: url, ...bases }),
+                                data: JSON.stringify({ Url: url, ArrBaseUrls: bases }),
                                 contentType: 'application/json',
                                 dataType: 'json'
                             });
@@ -309,14 +314,17 @@
                     urls.querySelectorAll('input').forEach(input => urlChecks.get(input)());
                 }
 
-                function labelArrRows(section) {
-                    const service = section.dataset.arrService;
-                    section.querySelectorAll('.arrServerRow').forEach((row, index) => {
+                function labelArrRows() {
+                    Array.from(arrRows.children).forEach((row, index) => {
                         const [base, key] = row.querySelectorAll('input');
-                        base.setAttribute('aria-label', service + ' base URL ' + (index + 1));
-                        key.setAttribute('aria-label', service + ' API key ' + (index + 1));
-                        row.querySelector('button').setAttribute('aria-label', 'Remove ' + service + ' server ' + (index + 1));
+                        base.setAttribute('aria-label', 'Server ' + (index + 1) + ' base URL');
+                        key.setAttribute('aria-label', 'Server ' + (index + 1) + ' API key');
                     });
+                }
+
+                function arrRowLabel(input) {
+                    const index = Array.from(arrRows.children).indexOf(input.closest('.arrServerRow'));
+                    return 'Server ' + (index + 1) + ': ';
                 }
 
                 function clearArrError() {
@@ -330,6 +338,7 @@
                     arrRevision++;
                     clearArrError();
                     clearUrlError();
+                    arrResults.textContent = '';
                 }
 
                 function showArrError(message, field) {
@@ -340,49 +349,35 @@
                     field?.focus();
                 }
 
-                function addArrRow(section, server = {}) {
-                    const rows = section.querySelector('.arrServerRows');
+                function addArrRow(server = {}) {
                     const row = arrTemplate.content.firstElementChild.cloneNode(true);
                     const [base, key] = row.querySelectorAll('input');
                     base.value = server.BaseUrl ?? '';
                     key.value = server.ApiKey ?? '';
-                    base.addEventListener('input', () => {
+                    const empty = () => !base.value.trim() && !key.value.trim();
+                    row.addEventListener('input', event => {
+                        if (row === arrRows.lastElementChild && !empty()) addArrRow();
                         arrChanged();
-                        recheckUrls();
+                        if (event.target === base) recheckUrls();
                     });
-                    key.addEventListener('input', arrChanged);
-                    row.querySelector('button').addEventListener('click', () => {
+                    row.addEventListener('focusout', event => {
+                        if (row.contains(event.relatedTarget) || row === arrRows.lastElementChild || !empty()) return;
                         row.remove();
-                        if (!rows.children.length) addArrRow(section);
-                        labelArrRows(section);
-                        arrChanged();
-                        recheckUrls();
+                        labelArrRows();
                     });
-                    rows.appendChild(row);
-                    labelArrRows(section);
-                    return base;
+                    arrRows.appendChild(row);
+                    labelArrRows();
                 }
-
-                arrSections.forEach(section => {
-                    section.querySelector('.arrAddServer').addEventListener('click', () => addArrRow(section).focus());
-                });
 
                 function renderArrServers(config) {
                     arrChanged();
-                    arrSections.forEach(section => {
-                        section.querySelector('.arrServerRows').textContent = '';
-                        const servers = config[section.dataset.arrService + 'Servers'] || [];
-                        (servers.length ? servers : [{}]).forEach(server => addArrRow(section, server || {}));
-                    });
+                    arrRows.textContent = '';
+                    (config.ArrServers || []).forEach(server => addArrRow(server || {}));
+                    addArrRow();
                 }
 
                 function draftArrBases() {
-                    const result = {};
-                    arrSections.forEach(section => {
-                        result[section.dataset.arrService + 'BaseUrls'] = Array.from(
-                            section.querySelectorAll('input[type="text"]'), input => input.value.trim()).filter(canCheckArrBase);
-                    });
-                    return result;
+                    return Array.from(arrRows.querySelectorAll('input[type="text"]'), input => input.value.trim()).filter(canCheckArrBase);
                 }
 
                 function canCheckArrBase(value) {
@@ -404,7 +399,7 @@
                     let source;
                     try { source = new URL(value); } catch { return false; }
                     const path = matchPath(source);
-                    return Object.values(bases).flat().some(value => {
+                    return bases.some(value => {
                         if (!value) return false;
                         let base;
                         try { base = new URL(value); } catch { return false; }
@@ -439,57 +434,101 @@
                 }
 
                 function collectArrServers() {
-                    const servers = {};
-                    const rows = {};
-                    const bases = {};
-                    for (const section of arrSections) {
-                        const service = section.dataset.arrService;
-                        const pairs = servers[service + 'Servers'] = [];
-                        const fields = rows[service] = [];
-                        const baseUrls = bases[service + 'BaseUrls'] = [];
-                        for (const [index, row] of [...section.querySelectorAll('.arrServerRow')].entries()) {
-                            const [base, key] = row.querySelectorAll('input');
-                            const BaseUrl = base.value.trim();
-                            const ApiKey = key.value.trim();
-                            if (!BaseUrl && !ApiKey) continue;
-                            const rowLabel = service + ' server ' + (index + 1) + ': ';
-                            if (!/^[!-~]+$/.test(ApiKey)) {
-                                showArrError(rowLabel + 'Enter an API key with no spaces or non-ASCII characters.', key);
-                                return null;
-                            }
-                            pairs.push({ BaseUrl, ApiKey });
-                            fields.push({ base, rowLabel });
-                            // Preserve indexing without sending base URLs that may contain credentials.
-                            baseUrls.push(canCheckArrBase(BaseUrl) ? BaseUrl : null);
+                    const servers = [];
+                    const baseInputs = [];
+                    const bases = [];
+                    for (const row of arrRows.children) {
+                        const [base, key] = row.querySelectorAll('input');
+                        const BaseUrl = base.value.trim();
+                        const ApiKey = key.value.trim();
+                        if (!BaseUrl && !ApiKey) continue;
+                        if (!BaseUrl || !ApiKey) {
+                            showArrError(arrRowLabel(base) + 'Enter both a base URL and an API key, or clear both fields.', BaseUrl ? key : base);
+                            return null;
                         }
+                        if (!/^[!-~]+$/.test(ApiKey)) {
+                            showArrError(arrRowLabel(base) + 'Enter an API key with no spaces or non-ASCII characters.', key);
+                            return null;
+                        }
+                        servers.push({ BaseUrl, ApiKey });
+                        baseInputs.push(base);
+                        // Preserve indexing without sending base URLs that may contain credentials.
+                        bases.push(canCheckArrBase(BaseUrl) ? BaseUrl : null);
                     }
-                    return { servers, rows, bases };
+                    return { servers, baseInputs, bases };
                 }
 
                 async function checkArrBases(draft, revision) {
-                    if (!Object.values(draft.bases).some(bases => bases.length)) return true;
+                    if (!draft.bases.length) return true;
                     let result;
                     try {
                         result = await ApiClient.ajax({
                             type: 'POST',
                             url: ApiClient.getUrl('MagicCollections/ArrServerBases'),
-                            data: JSON.stringify(draft.bases),
+                            data: JSON.stringify({ ArrBaseUrls: draft.bases }),
                             contentType: 'application/json',
                             dataType: 'json'
                         });
                     } catch {
-                        if (revision === arrRevision) showArrError('Could not check the Radarr and Sonarr settings. Try saving again.');
+                        if (revision === arrRevision) showArrError('Could not check the *arr server settings. Try again.');
                         return false;
                     }
                     if (revision !== arrRevision) return false;
                     if (result.Error) {
-                        const { Service, Index, Message } = result.Error;
-                        const { base, rowLabel } = draft.rows[Service][Index];
-                        showArrError(rowLabel + Message, base);
+                        const { Index, Message } = result.Error;
+                        const base = draft.baseInputs[Index];
+                        showArrError(arrRowLabel(base) + Message, base);
                         return false;
                     }
                     return true;
                 }
+
+                function renderArrTestResults(results, baseInputs) {
+                    const list = document.createElement('ul');
+                    for (const { Index, Service, Message } of results) {
+                        const item = document.createElement('li');
+                        item.textContent = arrRowLabel(baseInputs[Index]) + (Service ? Service + ' — ' : '') + Message;
+                        list.appendChild(item);
+                    }
+                    arrResults.replaceChildren(list);
+                }
+
+                testServers.addEventListener('mousedown', event => event.preventDefault());
+                testServers.addEventListener('click', async () => {
+                    if (testServers.disabled) return;
+                    clearArrError();
+                    arrResults.textContent = '';
+                    const draft = collectArrServers();
+                    if (!draft) return;
+                    if (!draft.servers.length) {
+                        arrResults.textContent = 'Enter a server base URL and API key to test.';
+                        return;
+                    }
+
+                    const revision = arrRevision;
+                    testServers.disabled = true;
+                    arrResults.textContent = 'Testing servers…';
+                    try {
+                        // Check URL syntax and duplicates before sending any draft API keys to the test endpoint.
+                        if (!await checkArrBases(draft, revision)) {
+                            if (revision === arrRevision) arrResults.textContent = '';
+                            return;
+                        }
+                        if (revision !== arrRevision) return;
+                        const result = await ApiClient.ajax({
+                            type: 'POST',
+                            url: ApiClient.getUrl('MagicCollections/ArrServerTest'),
+                            data: JSON.stringify({ ArrServers: draft.servers }),
+                            contentType: 'application/json',
+                            dataType: 'json'
+                        });
+                        if (revision === arrRevision) renderArrTestResults(result.Results, draft.baseInputs);
+                    } catch {
+                        if (revision === arrRevision) arrResults.textContent = 'Could not test the servers. Try again.';
+                    } finally {
+                        testServers.disabled = false;
+                    }
+                });
 
                 function renderUrls(values) {
                     urls.textContent = '';
@@ -541,7 +580,7 @@
                             const sourceUrls = collectSourceUrls(draft.bases);
                             if (!sourceUrls) return;
                             config.SourceUrls = sourceUrls;
-                            Object.assign(config, draft.servers);
+                            config.ArrServers = draft.servers;
                             checkboxOptions.forEach(option => { config[option.name] = option.checked; });
                             config.TraktClientId = traktClientId.value.trim();
                             const result = await ApiClient.updatePluginConfiguration(pluginId, config);

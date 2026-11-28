@@ -57,29 +57,29 @@ public sealed class SourceListUrlControllerTests
     [InlineData("https://@media.example.com/Radarr/tag_name", false)]
     [InlineData("https://media.example.com/Radarr/tag_name?apikey=key", false)]
     [InlineData("https://media.example.com/Radarr/tag_name#", false)]
-    public void Radarr_source_must_identify_one_tag_at_a_configured_scheme_host_port_and_base_path(string url, bool supported)
+    public void Arr_source_must_identify_one_tag_at_a_configured_scheme_host_port_and_base_path(string url, bool supported)
     {
         using var provider = PluginTestServices.BuildProvider(new()
         {
-            RadarrServers = [new() { BaseUrl = "https://media.example.com/Radarr/", ApiKey = "example-key" }],
-            SonarrServers = [new() { BaseUrl = "https://media.example.com/Sonarr/", ApiKey = "other-key" }]
+            ArrServers =
+            [
+                new() { BaseUrl = "https://media.example.com/Radarr/", ApiKey = "example-key" },
+                new() { BaseUrl = "https://media.example.com/Sonarr/", ApiKey = "other-key" }
+            ]
         });
         var controller = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
 
         Assert.Equal(supported, controller.Validate(new(url)));
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Radarr_source_rejects_duplicate_normalized_bases_even_across_services(bool acrossServices)
+    [Fact]
+    public void Arr_source_rejects_duplicate_normalized_bases()
     {
         var first = new ArrServerConfiguration { BaseUrl = "https://media.example.com/Radarr", ApiKey = "first-key" };
         var duplicate = new ArrServerConfiguration { BaseUrl = "https://MEDIA.example.com:443/Radarr/", ApiKey = "second-key" };
         using var provider = PluginTestServices.BuildProvider(new()
         {
-            RadarrServers = acrossServices ? [first] : [first, duplicate],
-            SonarrServers = acrossServices ? [duplicate] : []
+            ArrServers = [first, duplicate]
         });
         var controller = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
 
@@ -96,7 +96,7 @@ public sealed class SourceListUrlControllerTests
     {
         using var provider = PluginTestServices.BuildProvider(new()
         {
-            RadarrServers = [new() { BaseUrl = baseUrl, ApiKey = key }]
+            ArrServers = [new() { BaseUrl = baseUrl, ApiKey = key }]
         });
         var controller = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
 
@@ -106,20 +106,21 @@ public sealed class SourceListUrlControllerTests
     [Fact]
     public void Draft_URL_checks_only_need_bases_and_do_not_fall_back_to_removed_saved_pairs()
     {
-        const string old = "https://old-radarr.example.com";
-        const string draft = "https://new-radarr.example.com/Radarr";
+        const string old = "https://old.example.invalid";
+        const string draft = "https://new.example.invalid/proxy";
         using var provider = PluginTestServices.BuildProvider(new()
         {
-            RadarrServers = [new() { BaseUrl = old, ApiKey = "saved-key" }]
+            ArrServers = [new() { BaseUrl = old, ApiKey = "saved-key" }]
         });
         var controller = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
 
         Assert.True(controller.Validate(new(old + "/tag_name")));
-        Assert.False(controller.Validate(new(old + "/tag_name", [draft], [])));
-        Assert.True(controller.Validate(new(draft + "/tag_name", [draft], [])));
-        Assert.False(controller.Validate(new(draft + "/extra/tag_name", [draft], [])));
-        Assert.False(controller.Validate(new(draft + "/tag_name", [draft], [draft + "/"])));
-        Assert.True(controller.Validate(new("https://letterboxd.com/example/list/movies/", [draft], [])));
+        Assert.False(controller.Validate(new(old + "/tag_name", [])));
+        Assert.False(controller.Validate(new(old + "/tag_name", [draft])));
+        Assert.True(controller.Validate(new(draft + "/tag_name", [draft])));
+        Assert.False(controller.Validate(new(draft + "/extra/tag_name", [draft])));
+        Assert.False(controller.Validate(new(draft + "/tag_name", [draft, draft + "/"])));
+        Assert.True(controller.Validate(new("https://letterboxd.com/example/list/movies/", [draft])));
     }
 
     [Fact]
@@ -129,31 +130,24 @@ public sealed class SourceListUrlControllerTests
         const string scoped = "http://[fe80::1%25eth0]:7878/radarr";
         using var provider = PluginTestServices.BuildProvider(new()
         {
-            RadarrServers = [new() { BaseUrl = unscoped, ApiKey = "saved-key" }]
+            ArrServers = [new() { BaseUrl = unscoped, ApiKey = "saved-key" }]
         });
         var controller = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
 
         Assert.True(controller.Validate(new(unscoped + "/family")));
         Assert.False(controller.Validate(new(scoped + "/family")));
-        Assert.False(controller.Validate(new(unscoped + "/family", [scoped], [])));
+        Assert.False(controller.Validate(new(unscoped + "/family", [scoped])));
     }
 
     [Fact]
-    public void Sonarr_validation_uses_the_saved_or_draft_Sonarr_base_without_mixing_services()
+    public void Draft_validation_rejects_decorated_sources_even_without_saved_credentials()
     {
-        const string saved = "https://media.example.com/sonarr";
-        const string draft = "https://media.example.com/new-sonarr";
-        using var provider = PluginTestServices.BuildProvider(new()
-        {
-            SonarrServers = [new() { BaseUrl = saved, ApiKey = "saved-sonarr-key" }]
-        });
+        const string draft = "https://media.example.com/proxy";
+        using var provider = PluginTestServices.BuildProvider();
         var controller = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
 
-        Assert.True(controller.Validate(new(saved + "/family-shows")));
-        Assert.False(controller.Validate(new(draft + "/family-shows")));
-        Assert.False(controller.Validate(new(saved + "/family-shows?apikey=key")));
-        Assert.True(controller.Validate(new(draft + "/family-shows", [], [draft])));
-        Assert.False(controller.Validate(new(saved + "/family-shows", [], [draft])));
-        Assert.False(controller.Validate(new(draft + "/family-shows", [draft], [draft + "/"])));
+        Assert.True(controller.Validate(new(draft + "/family-shows", [draft])));
+        Assert.False(controller.Validate(new(draft + "/family-shows?apikey=key", [draft])));
+        Assert.False(controller.Validate(new(draft + "/family-shows#key", [draft])));
     }
 }

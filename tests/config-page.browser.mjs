@@ -41,12 +41,14 @@ async function testPage() {
     const pastedTraktList = 'https://trakt.tv/users/Justin/lists/OPEN-YOUR-EYES/?access_token=example-token#example-fragment';
     const cleanTraktList = 'https://app.trakt.tv/users/justin/lists/open-your-eyes';
     const radarr = 'https://radarr.example.com/radarr';
-    const anotherRadarr = 'https://another.example.com';
+    const anotherServer = 'https://another.example.com';
     const sonarr = 'https://sonarr.example.com/sonarr';
     const arrSource = radarr + '/movie-night';
     const sonarrSource = sonarr + '/family-shows';
     const arrChecks = [];
     const saveChecks = [];
+    const serverTests = [];
+    let pendingServerTest;
     let checkContainedKey = false;
     const checked = [];
     let saved = { SourceUrls: [unsupported], PosterBackgroundImage: true, PosterListName: true };
@@ -92,14 +94,20 @@ async function testPage() {
                 return { Connected: false };
             }
             const body = JSON.parse(request.data);
+            if (request.url === 'MagicCollections/ArrServerTest') {
+                serverTests.push(body);
+                pendingServerTest = Promise.withResolvers();
+                return pendingServerTest.promise;
+            }
             checkContainedKey ||= request.data.includes('draft-key');
             if (request.url === 'MagicCollections/ArrServerBases') {
                 saveChecks.push(body);
-                if (!body.RadarrBaseUrls[0] || body.RadarrBaseUrls[0].includes('//proxy')) {
-                    return { Error: { Service: 'Radarr', Index: 0, Message: 'Enter a valid base URL without credentials or invalid path segments.' } };
+                if (!body.ArrBaseUrls[0] || body.ArrBaseUrls[0].includes('//proxy')) {
+                    return { Error: { Index: 0, Message: 'Enter a valid base URL without credentials or invalid path segments.' } };
                 }
-                if (body.SonarrBaseUrls.includes('https://RADARR.example.com:443/radarr/')) {
-                    return { Error: { Service: 'Sonarr', Index: 0, Message: 'This base URL is already used by another server.' } };
+                const duplicate = body.ArrBaseUrls.indexOf('https://RADARR.example.com:443/radarr/');
+                if (duplicate !== -1) {
+                    return { Error: { Index: duplicate, Message: 'This base URL is already used by another server.' } };
                 }
                 return { Error: null };
             }
@@ -112,9 +120,9 @@ async function testPage() {
             }
             if (url === arrSource) {
                 arrChecks.push(body);
-                return body.RadarrBaseUrls?.includes(radarr) ?? false;
+                return body.ArrBaseUrls?.includes(radarr) ?? false;
             }
-            if (url === sonarrSource) return body.SonarrBaseUrls?.includes(sonarr) ?? false;
+            if (url === sonarrSource) return body.ArrBaseUrls?.includes(sonarr) ?? false;
             return url === supported;
         }
     };
@@ -369,72 +377,123 @@ async function testPage() {
         if (!arrToggle || arrToggle.parentElement.open) throw new Error('The *arr panel should start collapsed.');
         arrToggle.click();
         const arrPanel = arrToggle.parentElement;
-        const bases = service => [...arrPanel.querySelectorAll('input[aria-label^="' + service + ' base URL"]')];
-        const keys = service => [...arrPanel.querySelectorAll('input[aria-label^="' + service + ' API key"]')];
-        const add = service => [...arrPanel.querySelectorAll('button')].find(button => button.textContent.trim() === 'Add ' + service + ' server');
-        if (!bases('Radarr')[0]?.checkVisibility() || !bases('Sonarr')[0]?.checkVisibility()) {
-            throw new Error('Opening *arr should show the Radarr and Sonarr sections.');
+        const bases = () => [...arrPanel.querySelectorAll('input[aria-label$=" base URL"]')];
+        const keys = () => [...arrPanel.querySelectorAll('input[aria-label$=" API key"]')];
+        const testServers = arrPanel.querySelector('#magicCollectionsArrTest');
+        const results = arrPanel.querySelector('#magicCollectionsArrResults');
+        if (!bases()[0]?.checkVisibility() || bases().length !== 1 ||
+                arrPanel.querySelector('select, [data-arr-service], .arrServerRow button') ||
+                testServers?.textContent.trim() !== 'Test servers') {
+            throw new Error('Opening *arr should show one server list without a service selector.');
         }
-        for (const service of ['Radarr', 'Sonarr']) {
-            const base = bases(service)[0].getBoundingClientRect();
-            const key = keys(service)[0].getBoundingClientRect();
-            if (keys(service)[0].type !== 'password' || key.left < base.right || key.top !== base.top) {
-                throw new Error('Each *arr row should have a masked API key beside its base URL.');
-            }
+        testServers.click();
+        if (!results.textContent.includes('Enter a server') || serverTests.length) {
+            throw new Error('Testing an empty list should explain what is needed without making a request.');
+        }
+        const baseBox = bases()[0].getBoundingClientRect();
+        const keyBox = keys()[0].getBoundingClientRect();
+        if (keys()[0].type !== 'password' || keyBox.left < baseBox.right || keyBox.top !== baseBox.top) {
+            throw new Error('The server row should have a masked API key beside its base URL.');
+        }
+        const [baseHeading, keyHeading] = arrPanel.querySelectorAll('.arrServerColumns span');
+        if (baseHeading?.textContent !== 'Base URL' || keyHeading?.textContent !== 'API key' ||
+                baseHeading.getBoundingClientRect().left !== baseBox.left || keyHeading.getBoundingClientRect().left !== keyBox.left ||
+                baseHeading.getBoundingClientRect().bottom > baseBox.top) {
+            throw new Error('The *arr panel should show its labels once as aligned column headings.');
         }
         enter(field(3), arrSource);
         enter(field(4), sonarrSource);
         await until(() => invalid(3) && invalid(4), '*arr lists without configured bases should be marked unsupported.');
-        enter(bases('Radarr')[0], '  ' + radarr + '  ');
+        enter(bases()[0], '  ' + radarr + '  ');
+        if (bases().length !== 2 || bases()[1].value || keys()[1].value) {
+            throw new Error('Editing the last server row should add one blank row.');
+        }
         save.click();
         await wait(30);
         if (saveCount !== 8 || !arrPanel.querySelector('[role="alert"]')?.textContent) {
             throw new Error('Saving an incomplete pair should keep the draft and explain what is missing.');
         }
-        enter(keys('Radarr')[0], '  radarr-draft-key  ');
+        enter(keys()[0], '  radarr-draft-key  ');
         const badBase = 'https://radarr.example.com/radarr?apikey=query-draft-key';
-        enter(bases('Radarr')[0], badBase);
+        enter(bases()[0], badBase);
         save.click();
         await until(() => invalid(3) && arrPanel.querySelector('[role="alert"]')?.textContent.includes('without credentials'),
             'A base URL with a query string should not be saved.');
         if (saveCount !== 8 || checkContainedKey) throw new Error('A credential in a base URL should not be sent.');
         const arrError = arrPanel.querySelector('[role="alert"]');
         const badPath = radarr + '//proxy';
-        enter(bases('Radarr')[0], badPath);
+        enter(bases()[0], badPath);
         save.click();
-        await until(() => arrError.textContent.includes('Radarr server 1') && arrError.textContent.includes('path segments'),
+        await until(() => arrError.textContent.includes('Server 1') && arrError.textContent.includes('path segments'),
             'Saving should explain the server’s base path rejection by row.');
-        if (saveCount !== 8 || document.activeElement !== bases('Radarr')[0] ||
-                !saveChecks.some(check => check.RadarrBaseUrls.includes(badPath))) {
+        if (saveCount !== 8 || document.activeElement !== bases()[0] ||
+                !saveChecks.some(check => check.ArrBaseUrls.includes(badPath))) {
             throw new Error('The server should validate the base path and the rejected field should receive focus.');
         }
-        enter(bases('Radarr')[0], '  ' + radarr + '  ');
-        add('Radarr').click();
-        enter(bases('Radarr')[1], anotherRadarr);
-        enter(keys('Radarr')[1], 'second radarr-draft-key');
+        enter(bases()[0], '  ' + radarr + '  ');
+        enter(keys()[1], 'second radarr-draft-key');
+        if (bases().length !== 3) throw new Error('Typing the key first should also add a trailing row.');
+        enter(bases()[1], anotherServer);
         save.click();
-        await until(() => arrError.textContent.includes('Radarr server 2') && arrError.textContent.includes('API key'),
+        await until(() => arrError.textContent.includes('Server 2') && arrError.textContent.includes('API key'),
             'Saving an unsafe API key should explain which row to fix.');
-        if (saveCount !== 8 || document.activeElement !== keys('Radarr')[1] || arrError.textContent.includes('draft-key')) {
+        if (saveCount !== 8 || document.activeElement !== keys()[1] || arrError.textContent.includes('draft-key')) {
             throw new Error('An invalid key should not be saved or echoed in the error.');
         }
-        enter(keys('Radarr')[1], 'second-radarr-draft-key');
-        enter(bases('Sonarr')[0], 'https://RADARR.example.com:443/radarr/');
-        enter(keys('Sonarr')[0], 'sonarr-draft-key');
+        enter(keys()[1], 'second-radarr-draft-key');
+        enter(bases()[2], 'https://RADARR.example.com:443/radarr/');
+        enter(keys()[2], 'sonarr-draft-key');
+        if (arrPanel.querySelectorAll('.arrServerColumns').length !== 1 || arrPanel.querySelector('.arrServerRow input[label]')) {
+            throw new Error('Adding rows must not repeat the visible labels, but inputs keep their accessible names.');
+        }
         save.click();
-        await until(() => arrError.textContent.includes('Sonarr server 1') && arrError.textContent.includes('already used'),
-            'Saving should explain when a normalized base duplicates one from another service.');
-        if (saveCount !== 8 || document.activeElement !== bases('Sonarr')[0]) {
+        await until(() => arrError.textContent.includes('Server 3') && arrError.textContent.includes('already used'),
+            'Saving should explain when a normalized base duplicates another server.');
+        if (saveCount !== 8 || document.activeElement !== bases()[2]) {
             throw new Error('A duplicate base should not be saved and the rejected field should receive focus.');
         }
-        enter(bases('Sonarr')[0], sonarr);
-        await until(() => arrChecks.at(-1)?.RadarrBaseUrls?.includes(anotherRadarr) && !invalid(3) && !invalid(4),
+        testServers.click();
+        await until(() => !testServers.disabled && arrError.textContent.includes('already used'),
+            'Testing should also validate duplicate bases.');
+        if (serverTests.length) throw new Error('Testing must not send any keys with duplicate bases.');
+        enter(bases()[2], sonarr);
+        await until(() => arrChecks.at(-1)?.ArrBaseUrls?.includes(sonarr) && !invalid(3) && !invalid(4),
             'Both source URLs should be rechecked against the edited bases before saving.');
         const draftCheck = arrChecks.at(-1);
-        if (checkContainedKey || Object.keys(draftCheck).sort().join() !== 'RadarrBaseUrls,SonarrBaseUrls,Url' ||
-                draftCheck.RadarrBaseUrls.join() !== [radarr, anotherRadarr].join() || draftCheck.SonarrBaseUrls.join() !== sonarr) {
+        if (checkContainedKey || Object.keys(draftCheck).sort().join() !== 'ArrBaseUrls,Url' ||
+                draftCheck.ArrBaseUrls.join() !== [radarr, anotherServer, sonarr].join()) {
             throw new Error('A draft URL check should send only the source URL and base URLs, never API keys.');
         }
+        testServers.click();
+        await until(() => pendingServerTest && testServers.disabled, 'The explicit test did not check the draft servers.');
+        if (serverTests[0].ArrServers.length !== 3 || serverTests[0].ArrServers[0].ApiKey !== 'radarr-draft-key' ||
+                saveCount !== 8 || !results.textContent.includes('Testing servers')) {
+            throw new Error('Testing should check the filled draft pairs, ignore the blank row, and not save.');
+        }
+        pendingServerTest.resolve({ Results: [
+            { Index: 0, Service: 'Radarr', Message: 'Connected.' },
+            { Index: 1, Service: null, Message: 'Could not connect.' },
+            { Index: 2, Service: 'Sonarr', Message: 'Connected.' }
+        ] });
+        await until(() => !testServers.disabled && results.querySelectorAll('li').length === 3, 'The button should show per-server results.');
+        if (!results.textContent.includes('Server 1: Radarr') || !results.textContent.includes('Server 2: Could not connect.') ||
+                !results.textContent.includes('Server 3: Sonarr') || results.textContent.includes('draft-key')) {
+            throw new Error('The results should identify the detected service or explain its failure without exposing keys.');
+        }
+        pendingServerTest = null;
+        testServers.click();
+        await until(() => pendingServerTest, 'Running another test should use the current settings.');
+        enter(keys()[0], 'changed-draft-key');
+        pendingServerTest.resolve({ Results: [{ Index: 0, Service: 'Radarr', Message: 'Old result.' }] });
+        await until(() => !testServers.disabled, 'The test button should reenable after a draft edit.');
+        if (results.textContent) throw new Error('A delayed result must not overwrite a newer draft.');
+        enter(keys()[0], 'radarr-draft-key');
+        pendingServerTest = null;
+        testServers.click();
+        await until(() => pendingServerTest, 'The test request did not start.');
+        pendingServerTest.reject(new Error('Network error'));
+        await until(() => !testServers.disabled && results.textContent.includes('Could not test'),
+            'A test request failure should give feedback and let the user retry.');
         const pastedArrSource = 'https://RADARR.example.com:443/%72adarr/movie-night?apikey=pasted-draft-key';
         enter(field(3), pastedArrSource);
         await wait(450);
@@ -447,22 +506,34 @@ async function testPage() {
         enter(field(3), arrSource);
         save.click();
         await until(() => saveCount === 9 && field(3)?.value === arrSource && field(4)?.value === sonarrSource &&
-            keys('Radarr')[0]?.value === 'radarr-draft-key', 'Saving should persist and reload both source URLs and settings.');
-        if (JSON.stringify(saved.RadarrServers) !== JSON.stringify([
+            keys()[0]?.value === 'radarr-draft-key', 'Saving should persist and reload both source URLs and settings.');
+        if (JSON.stringify(saved.ArrServers) !== JSON.stringify([
                 { BaseUrl: radarr, ApiKey: 'radarr-draft-key' },
-                { BaseUrl: anotherRadarr, ApiKey: 'second-radarr-draft-key' }
-            ]) || JSON.stringify(saved.SonarrServers) !== JSON.stringify([{ BaseUrl: sonarr, ApiKey: 'sonarr-draft-key' }]) ||
-                keys('Sonarr')[0]?.value !== 'sonarr-draft-key') {
-            throw new Error('The configuration should keep pairs together and the services separate.');
+                { BaseUrl: anotherServer, ApiKey: 'second-radarr-draft-key' },
+                { BaseUrl: sonarr, ApiKey: 'sonarr-draft-key' }
+            ]) || keys()[2]?.value !== 'sonarr-draft-key') {
+            throw new Error('The configuration should store both servers the same way without a service type.');
         }
-        arrPanel.querySelector('button[aria-label="Remove Radarr server 1"]').click();
-        arrPanel.querySelector('button[aria-label="Remove Sonarr server 1"]').click();
+        function clearPair(index) {
+            const base = bases()[index];
+            const key = keys()[index];
+            base.focus();
+            enter(base, '');
+            key.focus();
+            if (!base.isConnected) throw new Error('A row must stay while focus moves between its inputs.');
+            enter(key, '');
+            testServers.focus();
+            if (base.isConnected) throw new Error('Clearing a row and leaving it should remove it.');
+        }
+        clearPair(0);
+        clearPair(1);
         await until(() => invalid(3) && invalid(4), 'Removing bases should recheck both source URLs.');
         save.click();
-        await until(() => saveCount === 10 && bases('Radarr')[0]?.value === anotherRadarr,
+        await until(() => saveCount === 10 && bases()[0]?.value === anotherServer,
             'Saving should remove only the selected pairs.');
-        if (saved.RadarrServers.length !== 1 || saved.RadarrServers[0].ApiKey !== 'second-radarr-draft-key' ||
-                saved.SonarrServers.length !== 0 || !saved.SourceUrls.includes(arrSource) || !saved.SourceUrls.includes(sonarrSource)) {
+        if (saved.ArrServers.length !== 1 || saved.ArrServers[0].ApiKey !== 'second-radarr-draft-key' ||
+                bases().length !== 2 || bases()[1].value || keys()[1].value ||
+                !saved.SourceUrls.includes(arrSource) || !saved.SourceUrls.includes(sonarrSource)) {
             throw new Error('Removing server rows should not remove the remaining pair or source URLs.');
         }
         result.textContent = 'PASS';

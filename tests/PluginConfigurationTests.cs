@@ -60,18 +60,51 @@ public sealed class PluginConfigurationTests : IDisposable
     }
 
     [Fact]
-    public void Saving_settings_round_trips_each_arr_service_pair_separately_from_source_URLs()
+    public void Reloading_legacy_arr_settings_preserves_bases_and_keys_in_one_list()
+    {
+        var plugin = CreatePlugin();
+        Directory.CreateDirectory(Path.GetDirectoryName(plugin.ConfigurationFilePath)!);
+        File.WriteAllText(plugin.ConfigurationFilePath, """
+            <PluginConfiguration>
+              <SourceUrls><string>https://media.example.com/radarr/watched</string></SourceUrls>
+              <RadarrServers>
+                <ArrServerConfiguration><BaseUrl>https://media.example.com/radarr</BaseUrl><ApiKey>movie-key</ApiKey></ArrServerConfiguration>
+              </RadarrServers>
+              <SonarrServers>
+                <ArrServerConfiguration><BaseUrl>https://media.example.com/sonarr</BaseUrl><ApiKey>series-key</ApiKey></ArrServerConfiguration>
+              </SonarrServers>
+            </PluginConfiguration>
+            """);
+
+        var reloaded = CreatePlugin();
+        var dashboard = JsonSerializer.SerializeToElement(reloaded.Configuration, JsonDefaults.PascalCaseOptions);
+        Assert.Equal([("https://media.example.com/radarr", "movie-key"), ("https://media.example.com/sonarr", "series-key")],
+            dashboard.GetProperty("ArrServers").EnumerateArray()
+                .Select(server => (server.GetProperty("BaseUrl").GetString(), server.GetProperty("ApiKey").GetString())));
+        Assert.False(dashboard.TryGetProperty("RadarrServers", out _));
+        Assert.False(dashboard.TryGetProperty("SonarrServers", out _));
+
+        reloaded.UpdateConfiguration(reloaded.Configuration);
+        var xml = File.ReadAllText(reloaded.ConfigurationFilePath);
+        Assert.Contains("<ArrServers>", xml);
+        Assert.DoesNotContain("RadarrServers", xml);
+        Assert.DoesNotContain("SonarrServers", xml);
+        Assert.Equal(["https://media.example.com/radarr/watched"], CreatePlugin().Configuration.SourceUrls);
+    }
+
+    [Fact]
+    public void Saving_settings_round_trips_the_arr_server_list_separately_from_source_URLs()
     {
         const string source = "https://radarr.example.com/family-movies";
         var plugin = CreatePlugin();
         IHasPluginConfiguration configuredPlugin = plugin;
         using var update = JsonDocument.Parse($$"""
             {
-              "RadarrServers": [
+              "ArrServers": [
                 { "BaseUrl": "https://radarr.example.com", "ApiKey": "radarr-key" },
-                { "BaseUrl": "http://localhost:7878/radarr", "ApiKey": "local-radarr-key" }
+                { "BaseUrl": "http://localhost:7878/radarr", "ApiKey": "local-radarr-key" },
+                { "BaseUrl": "https://sonarr.example.com", "ApiKey": "sonarr-key" }
               ],
-              "SonarrServers": [{ "BaseUrl": "https://sonarr.example.com", "ApiKey": "sonarr-key" }],
               "SourceUrls": ["{{source}}"]
             }
             """);
@@ -83,12 +116,30 @@ public sealed class PluginConfigurationTests : IDisposable
 
         Assert.Equal(source, Assert.Single(reloaded.GetProperty("SourceUrls").EnumerateArray()).GetString());
         Assert.Equal(
-            [("https://radarr.example.com", "radarr-key"), ("http://localhost:7878/radarr", "local-radarr-key")],
-            Pairs(reloaded.GetProperty("RadarrServers")));
-        Assert.Equal([("https://sonarr.example.com", "sonarr-key")], Pairs(reloaded.GetProperty("SonarrServers")));
+            [("https://radarr.example.com", "radarr-key"), ("http://localhost:7878/radarr", "local-radarr-key"),
+                ("https://sonarr.example.com", "sonarr-key")],
+            reloaded.GetProperty("ArrServers").EnumerateArray().Select(server =>
+            {
+                Assert.Equal(2, server.EnumerateObject().Count());
+                return (server.GetProperty("BaseUrl").GetString(), server.GetProperty("ApiKey").GetString());
+            }));
+    }
 
-        static IEnumerable<(string?, string?)> Pairs(JsonElement servers) => servers.EnumerateArray()
-            .Select(server => (server.GetProperty("BaseUrl").GetString(), server.GetProperty("ApiKey").GetString()));
+    [Fact]
+    public void A_supplied_empty_arr_list_overrides_legacy_pairs_in_a_configuration_update()
+    {
+        using var update = JsonDocument.Parse("""
+            {
+              "ArrServers": [],
+              "RadarrServers": [{ "BaseUrl": "https://old.example.com", "ApiKey": "previous-key" }]
+            }
+            """);
+        var plugin = CreatePlugin();
+
+        plugin.UpdateConfiguration(update.Deserialize<PluginConfiguration>(JsonDefaults.Options)!);
+
+        Assert.Empty(CreatePlugin().Configuration.ArrServers);
+        Assert.DoesNotContain("previous-key", File.ReadAllText(plugin.ConfigurationFilePath));
     }
 
     [Theory]
@@ -107,9 +158,9 @@ public sealed class PluginConfigurationTests : IDisposable
         configuredPlugin.UpdateConfiguration(new PluginConfiguration { SourceUrls = ["https://example.com/previous"] });
         var config = new PluginConfiguration
         {
-            RadarrServers = [new() { BaseUrl = "https://media.example.com/Radarr", ApiKey = "existing-key" }],
-            SonarrServers =
+            ArrServers =
             [
+                new() { BaseUrl = "https://media.example.com/Radarr", ApiKey = "existing-key" },
                 new() { BaseUrl = "https://media.example.com/other", ApiKey = "other-key" },
                 new() { BaseUrl = baseUrl, ApiKey = key }
             ]
@@ -117,7 +168,7 @@ public sealed class PluginConfigurationTests : IDisposable
 
         var error = Assert.ThrowsAny<ArgumentException>(() => configuredPlugin.UpdateConfiguration(config));
 
-        Assert.Contains("Sonarr server 2", error.Message, StringComparison.Ordinal);
+        Assert.Contains("*arr server 3", error.Message, StringComparison.Ordinal);
         Assert.Contains(expectedProblem, error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("private-", error.ToString(), StringComparison.Ordinal);
         Assert.Equal(["https://example.com/previous"], plugin.Configuration.SourceUrls);
@@ -137,13 +188,13 @@ public sealed class PluginConfigurationTests : IDisposable
         var config = new PluginConfiguration
         {
             SourceUrls = [unrelated],
-            RadarrServers = [new() { BaseUrl = "https://media.example.com/Radarr", ApiKey = "configured-key" }]
+            ArrServers = [new() { BaseUrl = "https://media.example.com/Radarr", ApiKey = "configured-key" }]
         };
         configuredPlugin.UpdateConfiguration(config);
 
         var ex = Assert.Throws<ArgumentException>(() => configuredPlugin.UpdateConfiguration(new PluginConfiguration
         {
-            RadarrServers = config.RadarrServers,
+            ArrServers = config.ArrServers,
             SourceUrls = [unrelated, source]
         }));
 

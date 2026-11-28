@@ -30,7 +30,7 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             media.Value.Where(item => item.Identity.Type == SourceMediaType.Movie &&
                     item.MovieTitleYear is { IsComplete: true })
                 .ToLookup(item => item.MovieTitleYear!.Value.MatchKey(), item => item.Id));
-        var syncedSources = new HashSet<(string Url, string? ArrServiceTag)>();
+        var syncedSources = new HashSet<(string Url, bool IsArr)>();
 
         foreach (var url in urls)
         {
@@ -49,9 +49,8 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
                 ? PrivateTraktTag(canonicalUrl) : null;
             var logUrl = opaqueTag ?? (verboseLogger is null ? null :
                 canonicalSource.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped));
-            // The same URL can be reassigned to another *arr service without replacing its collection.
-            var arrServiceTag = handler is ArrHandler ? handler.SourceTag : null;
-            if (!syncedSources.Add((canonicalUrl, arrServiceTag)))
+            // An *arr base resolves to the same service throughout this run.
+            if (!syncedSources.Add((canonicalUrl, handler is ArrHandler)))
             {
                 verboseLogger?.LogInformation("Skipping duplicate source list {SourceUrl}", logUrl);
                 continue;
@@ -86,7 +85,8 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             var sourceTag = list.TraktAccountScopedOwner is { } owner
                 ? PrivateTraktTag($"{canonicalUrl}|{owner.ToLowerInvariant()}")
                 : list.ReadWithTraktAccount ? opaqueTag! : canonicalUrl;
-            var existing = library.FindByTags(sourceTag, ManagedCollectionTag, arrServiceTag);
+            // The same URL can point to another *arr service in a later run without reusing the old collection.
+            var existing = library.FindByTags(sourceTag, ManagedCollectionTag, list.ArrServiceTag);
             if (existing is null && opaqueTag is not null && list.TraktAccountScopedOwner is null)
             {
                 // Changing the source's access mode must not create a second collection.
@@ -108,7 +108,7 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             }
 
             var id = existing?.Id ?? await library.CreateAsync(
-                CollectionName(list, source), ManagedCollectionTag, sourceTag, handler.SourceTag)
+                CollectionName(list, source), ManagedCollectionTag, sourceTag, list.ArrServiceTag ?? handler.SourceTag)
                 .ConfigureAwait(false);
             var currentMembers = existing?.MemberIds ?? [];
             var additions = matches.Except(currentMembers).ToArray();

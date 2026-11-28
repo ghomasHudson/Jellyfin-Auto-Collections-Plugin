@@ -9,6 +9,8 @@ public sealed class SonarrCollectionSyncTests
     private const string BaseUrl = "https://media.example.com:9443/sonarr";
     private const string SourceUrl = BaseUrl + "/family-shows";
     private const string Key = "example-sonarr-api-secret";
+    private const string StatusEndpoint = BaseUrl + "/api/v3/system/status";
+    private const string Status = """{"appName":"Sonarr","version":"4.0.20.3014"}""";
     private const string TagEndpoint = BaseUrl + "/api/v3/tag";
     private const string SeriesEndpoint = BaseUrl + "/api/v3/series";
     private const string Tags = """[{"id":12,"label":"family-shows"},{"id":3,"label":"other"}]""";
@@ -40,7 +42,7 @@ public sealed class SonarrCollectionSyncTests
         Assert.Equal("family-shows", collection.Name);
         Assert.Equal(["Magic Collection", SourceUrl, "Sonarr"], collection.Tags);
         Assert.Equal(new[] { tvdbMatch, tmdbMatch, imdbMatch }.Order(), collection.Members.Order());
-        Assert.Equal([(TagEndpoint, Key), (SeriesEndpoint, Key)], fixture.Requests);
+        Assert.Equal([(StatusEndpoint, Key), (TagEndpoint, Key), (SeriesEndpoint, Key)], fixture.Requests);
     }
 
     [Theory]
@@ -76,7 +78,7 @@ public sealed class SonarrCollectionSyncTests
 
         Assert.Contains("Tag does not exist", error.Message);
         Assert.Equal([original], collection.Members);
-        Assert.Equal([(TagEndpoint, Key)], fixture.Requests);
+        Assert.Equal([(StatusEndpoint, Key), (TagEndpoint, Key)], fixture.Requests);
     }
 
     [Theory]
@@ -100,7 +102,7 @@ public sealed class SonarrCollectionSyncTests
         Assert.Equal(status, error.StatusCode);
         Assert.DoesNotContain(Key, error.ToString());
         Assert.Equal([original], collection.Members);
-        Assert.Equal([(TagEndpoint, Key), (SeriesEndpoint, Key)], fixture.Requests);
+        Assert.Equal([(StatusEndpoint, Key), (TagEndpoint, Key), (SeriesEndpoint, Key)], fixture.Requests);
     }
 
     [Fact]
@@ -128,8 +130,9 @@ public sealed class SonarrCollectionSyncTests
         const string otherSource = otherBase + "/family-shows";
         const string otherKey = "secondary-sonarr-key";
         using var fixture = CreateFixture();
-        fixture.Configuration.SonarrServers = [.. fixture.Configuration.SonarrServers,
+        fixture.Configuration.ArrServers = [.. fixture.Configuration.ArrServers,
             new() { BaseUrl = otherBase, ApiKey = otherKey }];
+        fixture.Responses.RecordBody(otherBase + "/api/v3/system/status", Status);
         fixture.Responses.RecordBody(otherBase + "/api/v3/tag", Tags);
         fixture.Responses.RecordBody(otherBase + "/api/v3/series", """[{"id":901,"tvdbId":102,"tags":[12]}]""");
         var firstMember = fixture.AddMedia(SourceMediaType.Series, "Tvdb", "101");
@@ -147,8 +150,9 @@ public sealed class SonarrCollectionSyncTests
             Assert.Equal([secondMember], second.Members);
         });
         Assert.Equal([
-            (TagEndpoint, Key), (SeriesEndpoint, Key),
-            (otherBase + "/api/v3/tag", otherKey), (otherBase + "/api/v3/series", otherKey)
+            (StatusEndpoint, Key), (TagEndpoint, Key), (SeriesEndpoint, Key),
+            (otherBase + "/api/v3/system/status", otherKey), (otherBase + "/api/v3/tag", otherKey),
+            (otherBase + "/api/v3/series", otherKey)
         ], fixture.Requests);
     }
 
@@ -159,14 +163,11 @@ public sealed class SonarrCollectionSyncTests
         using var fixture = CreateFixture();
         var movie = fixture.AddMedia(SourceMediaType.Movie, "Tmdb", "101");
         var series = fixture.AddMedia(SourceMediaType.Series, "Tvdb", "101");
-        var sonarr = fixture.Configuration.SonarrServers;
-        fixture.Configuration.SonarrServers = [];
-        fixture.Configuration.RadarrServers = [new() { BaseUrl = BaseUrl, ApiKey = "movie-key" }];
+        fixture.Responses.RecordBody(StatusEndpoint, """{"appName":"Radarr","version":"4.0.5.5981"}""");
         fixture.Responses.RecordBody(BaseUrl + "/api/v3/movie", """[{"tmdbId":101,"tags":[12]}]""");
 
         await fixture.Sync(SourceUrl);
-        fixture.Configuration.RadarrServers = [];
-        fixture.Configuration.SonarrServers = sonarr;
+        fixture.Responses.RecordBody(StatusEndpoint, Status);
         await fixture.Sync(SourceUrl);
 
         Assert.Collection(fixture.Library.ManagedCollections, radarr =>
@@ -203,8 +204,9 @@ public sealed class SonarrCollectionSyncTests
     {
         var fixture = new ArrSyncFixture(new()
         {
-            SonarrServers = [new() { BaseUrl = BaseUrl + "/", ApiKey = Key }]
+            ArrServers = [new() { BaseUrl = BaseUrl + "/", ApiKey = Key }]
         });
+        fixture.Responses.RecordBody(StatusEndpoint, Status);
         fixture.Responses.RecordBody(TagEndpoint, Tags);
         fixture.Responses.RecordBody(SeriesEndpoint, """[{"id":901,"tvdbId":101,"tags":[12]}]""");
         return fixture;

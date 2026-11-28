@@ -2,8 +2,6 @@ using Jellyfin.Plugin.MagicCollections.Configuration;
 
 namespace Jellyfin.Plugin.MagicCollections.Sync;
 
-internal enum ArrService { Radarr, Sonarr }
-
 internal sealed class ArrTagSource(Uri baseUrl, string label, string apiKey)
 {
     public Uri BaseUrl { get; } = baseUrl;
@@ -11,10 +9,9 @@ internal sealed class ArrTagSource(Uri baseUrl, string label, string apiKey)
     public string ApiKey { get; } = apiKey;
     public Uri CanonicalUrl => new(BaseUrl, Uri.EscapeDataString(Label));
 
-    public static ArrTagSource? Resolve(Uri url, PluginConfiguration configuration, ArrService expectedService)
+    public static ArrTagSource? Resolve(Uri url, ArrServerConfiguration[] servers)
     {
-        var match = Match(url, SavedBases(configuration.RadarrServers, ArrService.Radarr)
-            .Concat(SavedBases(configuration.SonarrServers, ArrService.Sonarr)), expectedService);
+        var match = Match(url, servers.Select(server => (server?.BaseUrl, server)));
         if (match is not { } source || ReadApiKey(source.Value?.ApiKey) is not { } key)
         {
             return null;
@@ -22,9 +19,8 @@ internal sealed class ArrTagSource(Uri baseUrl, string label, string apiKey)
         return new(source.BaseUrl, source.Label, key);
     }
 
-    public static bool SupportsDraft(Uri url, string[]? radarrBases, string[]? sonarrBases, ArrService expectedService) =>
-        Match(url, (radarrBases ?? []).Select(value => (ArrService.Radarr, (string?)value, true))
-            .Concat((sonarrBases ?? []).Select(value => (ArrService.Sonarr, (string?)value, true))), expectedService) is not null;
+    public static bool SupportsDraft(Uri url, IEnumerable<string?> bases) =>
+        Match(url, bases.Select(value => (value, true))) is not null;
 
     internal static string? ReadApiKey(string? rawKey) =>
         rawKey?.Trim() is { Length: > 0 } key && key.All(c => c is >= '!' and <= '~') ? key : null;
@@ -49,11 +45,8 @@ internal sealed class ArrTagSource(Uri baseUrl, string label, string apiKey)
             TagSegment(path.TrimEnd('/'), configured.Path) is not null);
     }
 
-    private static IEnumerable<(ArrService Service, string? BaseUrl, ArrServerConfiguration? Value)> SavedBases(
-        ArrServerConfiguration[]? servers, ArrService service) => (servers ?? []).Select(server => (service, server?.BaseUrl, server));
-
     private static (Uri BaseUrl, string Label, T Value)? Match<T>(Uri url,
-        IEnumerable<(ArrService Service, string? BaseUrl, T Value)> bases, ArrService expectedService)
+        IEnumerable<(string? BaseUrl, T Value)> bases)
     {
         if (GetLocation(url) is not { } location)
         {
@@ -61,7 +54,7 @@ internal sealed class ArrTagSource(Uri baseUrl, string label, string apiKey)
         }
 
         (Uri BaseUrl, string Label, T Value)? match = null;
-        foreach (var (service, rawBaseUrl, value) in bases)
+        foreach (var (rawBaseUrl, value) in bases)
         {
             if (ParseBase(rawBaseUrl) is not { } configured || location.Origin != configured.Origin ||
                 TagSegment(location.Path, configured.Path) is not { } segment)
@@ -70,7 +63,7 @@ internal sealed class ArrTagSource(Uri baseUrl, string label, string apiKey)
             }
 
             // Any second matching row (even one without a usable key) makes the source ambiguous.
-            if (match is not null || service != expectedService)
+            if (match is not null)
             {
                 return null;
             }

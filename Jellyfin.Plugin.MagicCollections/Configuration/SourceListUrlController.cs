@@ -13,16 +13,16 @@ public sealed class SourceListUrlController(IEnumerable<ISourceListHandler> hand
     [HttpPost]
     public bool Validate([FromBody] SourceListUrlRequest request)
     {
-        if (request.RadarrBaseUrls is null && request.SonarrBaseUrls is null)
+        if (request.ArrBaseUrls is not { } bases)
         {
             return SourceListHandlerLookup.Find(handlers, request.Url) is not null;
         }
 
         // The dashboard already has the current draft; do not look up saved *arr credentials or call an *arr API.
         return SourceListHandlerLookup.Find(handlers, request.Url, (handler, url) => handler is ArrHandler arr
-            ? arr.SupportsDraft(url, request.RadarrBaseUrls, request.SonarrBaseUrls)
+            ? arr.SupportsDraft(url, bases)
             : handler.Supports(url)) is not null;
     }
 }
 
-public sealed record SourceListUrlRequest(string? Url, string[]? RadarrBaseUrls = null, string[]? SonarrBaseUrls = null);
+public sealed record SourceListUrlRequest(string? Url, string?[]? ArrBaseUrls = null);

@@ -20,8 +20,7 @@ internal sealed class ArrSyncFixture : IDisposable
         Responses = new(request => Requests.Add((request.RequestUri!.AbsoluteUri,
             Assert.Single(request.Headers.GetValues("X-Api-Key")))));
         _http = new(Responses);
-        Engine = new([new ArrHandler(_http, () => Configuration, ArrServiceDefinition.Radarr),
-            new ArrHandler(_http, () => Configuration, ArrServiceDefinition.Sonarr)], Library);
+        Engine = new([new ArrHandler(_http, () => Configuration.ArrServers)], Library);
     }
 
     public Task Sync(params string[] urls) =>

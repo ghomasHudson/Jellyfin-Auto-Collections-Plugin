@@ -6,6 +6,55 @@ namespace Jellyfin.Plugin.MagicCollections.Sync;
 
 internal static class ArrTagReader
 {
+    private const string StatusContext = "*arr system status";
+
+    public static async Task<ArrServiceDefinition> DetectAsync(HttpClient http, Uri baseUrl, string apiKey,
+        CancellationToken cancellationToken)
+    {
+        var supported = $"{ArrServiceDefinition.Radarr.MinimumRequirement} or {ArrServiceDefinition.Sonarr.MinimumRequirement}";
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(5));
+        try
+        {
+            using var status = await ReadJsonAsync(http, baseUrl, apiKey, "api/v3/system/status", StatusContext, deadline.Token,
+                maxResponseBytes: 64 * 1024)
+                .ConfigureAwait(false);
+            var root = status.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                !TryGetUniqueProperty(root, "appName", out var appName) ||
+                appName.ValueKind != JsonValueKind.String ||
+                ReadString(appName) is not { Length: > 0 } name ||
+                !TryGetUniqueProperty(root, "version", out var versionField) ||
+                versionField.ValueKind != JsonValueKind.String ||
+                ReadString(versionField) is not { } rawVersion ||
+                rawVersion.Any(c => c != '.' && c is not (>= '0' and <= '9')) ||
+                !Version.TryParse(rawVersion, out var version))
+            {
+                throw new JsonException();
+            }
+
+            var definition = name switch
+            {
+                "Radarr" => ArrServiceDefinition.Radarr,
+                "Sonarr" => ArrServiceDefinition.Sonarr,
+                _ => throw ReadError(baseUrl, StatusContext, $"Unsupported application. Requires {supported}.")
+            };
+            if (version < definition.MinimumVersion)
+            {
+                throw ReadError(baseUrl, StatusContext, $"Unsupported version. Requires {definition.MinimumRequirement}.");
+            }
+            return definition;
+        }
+        catch (JsonException)
+        {
+            throw ReadError(baseUrl, StatusContext, $"Invalid or incomplete system status response. Requires {supported}.");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw ReadError(baseUrl, StatusContext, "API request timed out.");
+        }
+    }
+
     public static async Task<SourceList> ReadAsync(HttpClient http, ArrTagSource source,
         ArrServiceDefinition definition, CancellationToken cancellationToken)
     {
@@ -32,7 +81,7 @@ internal static class ArrTagReader
             }
             if (tagId is null)
             {
-                throw ReadError("Tag does not exist.");
+                throw ReadError(source.BaseUrl, definition.Name, "Tag does not exist.");
             }
 
             using var media = await ReadArrayAsync(definition.MediaEndpoint).ConfigureAwait(false);
@@ -42,19 +91,18 @@ internal static class ArrTagReader
                 if (HasTag(row, tagId.Value))
                 {
                     var providers = new Dictionary<string, string>();
-                    TryGetUniqueProperty(row, "imdbId", out var imdb);
-                    if (ReadImdbId(imdb) is { } imdbId)
+                    var hasPrimary = false;
+                    foreach (var field in definition.ProviderFields)
                     {
-                        providers["Imdb"] = imdbId;
+                        TryGetUniqueProperty(row, field.Property, out var value);
+                        var (present, id) = ReadProviderId(value, field.Kind);
+                        hasPrimary |= field.Primary && present;
+                        if (id is not null)
+                        {
+                            providers.Add(field.Provider, id);
+                        }
                     }
-                    var primaryId = ReadNumericId(row, definition.PrimaryIdField);
-                    AddAvailableId(primaryId, definition.PrimaryProvider, providers);
-                    if (definition.OptionalTmdbIdField is { } optionalTmdbField)
-                    {
-                        // Older Sonarr versions do not include a TMDb ID.
-                        AddAvailableId(ReadNumericId(row, optionalTmdbField), "Tmdb", providers);
-                    }
-                    if (primaryId is null && providers.Count == 0)
+                    if (!hasPrimary && providers.Count == 0)
                     {
                         throw new JsonException();
                     }
@@ -64,35 +112,17 @@ internal static class ArrTagReader
                     }
                 }
             }
-            return new(source.Label, items);
+            return new(source.Label, items) { ArrServiceTag = definition.Name };
         }
         catch (JsonException)
         {
-            throw ReadError("Invalid or incomplete API response.");
+            throw ReadError(source.BaseUrl, definition.Name, "Invalid or incomplete API response.");
         }
-        catch (Exception error) when (error is HttpRequestException or IOException)
-        {
-            throw ReadError("API request failed.");
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw ReadError("API request timed out.");
-        }
-
-        SourceListReadException ReadError(string reason, HttpStatusCode? status = null) =>
-            new(source.BaseUrl, $"{definition.Service}: {reason}") { StatusCode = status };
 
         async Task<JsonDocument> ReadArrayAsync(string endpoint)
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(source.BaseUrl, endpoint));
-            request.Headers.Add("X-Api-Key", source.ApiKey);
-            using var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
-            if (response.StatusCode != HttpStatusCode.OK)
-            {
-                throw ReadError(FormattableString.Invariant($"API returned HTTP {(int)response.StatusCode}."), response.StatusCode);
-            }
-            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            var data = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var data = await ReadJsonAsync(http, source.BaseUrl, source.ApiKey, endpoint, definition.Name, cancellationToken)
+                .ConfigureAwait(false);
             if (data.RootElement.ValueKind != JsonValueKind.Array)
             {
                 data.Dispose();
@@ -101,6 +131,41 @@ internal static class ArrTagReader
             return data;
         }
     }
+
+    private static async Task<JsonDocument> ReadJsonAsync(HttpClient http, Uri baseUrl, string apiKey, string endpoint,
+        string context, CancellationToken cancellationToken, int? maxResponseBytes = null)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(baseUrl, endpoint));
+            request.Headers.Add("X-Api-Key", apiKey);
+            using var response = await http.SendAsync(request, maxResponseBytes is null
+                ? HttpCompletionOption.ResponseContentRead
+                : HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            if (response.StatusCode != HttpStatusCode.OK)
+            {
+                throw ReadError(baseUrl, context,
+                    FormattableString.Invariant($"API returned HTTP {(int)response.StatusCode}."), response.StatusCode);
+            }
+            if (maxResponseBytes is { } limit)
+            {
+                await response.Content.LoadIntoBufferAsync(limit, cancellationToken).ConfigureAwait(false);
+            }
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            return await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is HttpRequestException or IOException)
+        {
+            throw ReadError(baseUrl, context, "API request failed.");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw ReadError(baseUrl, context, "API request timed out.");
+        }
+    }
+
+    private static SourceListReadException ReadError(Uri baseUrl, string context, string reason,
+        HttpStatusCode? status = null) => new(baseUrl, $"{context}: {reason}") { StatusCode = status };
 
     // JsonDocument parses escapes lazily; extracting a string with invalid Unicode can throw
     // InvalidOperationException rather than JsonException.
@@ -148,35 +213,40 @@ internal static class ArrTagReader
         return match;
     }
 
-    // Zero is an explicitly unavailable ID, distinct from a missing field.
-    private static int? ReadNumericId(JsonElement row, string field)
+    private static (bool Present, string? Id) ReadProviderId(JsonElement value, ArrProviderIdKind kind)
     {
-        if (!TryGetUniqueProperty(row, field, out var value) || value.ValueKind == JsonValueKind.Null)
+        if (value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
         {
-            return null;
+            return (false, null);
+        }
+        if (kind == ArrProviderIdKind.Imdb)
+        {
+            return (true, ReadImdbId(value));
         }
         if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var id) || id < 0)
         {
             throw new JsonException();
         }
-        return id;
+        // Zero is an explicitly unavailable ID, distinct from a missing field.
+        return (true, id > 0 ? id.ToString(CultureInfo.InvariantCulture) : null);
     }
 
-    private static void AddAvailableId(int? id, string provider, Dictionary<string, string> providers)
-    {
-        if (id is > 0)
-        {
-            providers[provider] = id.Value.ToString(CultureInfo.InvariantCulture);
-        }
-    }
-
-    // JsonElement.TryGetProperty silently picks the last value. Reject ambiguous fields used for membership.
+    // JsonElement.TryGetProperty silently picks the last value. Reject ambiguous fields used for detection or membership.
     private static bool TryGetUniqueProperty(JsonElement row, string name, out JsonElement value)
     {
         value = default;
         foreach (var property in row.EnumerateObject())
         {
-            if (!property.NameEquals(name))
+            string propertyName;
+            try
+            {
+                propertyName = property.Name;
+            }
+            catch (InvalidOperationException)
+            {
+                throw new JsonException();
+            }
+            if (propertyName != name)
             {
                 continue;
             }

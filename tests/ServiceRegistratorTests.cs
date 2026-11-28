@@ -7,19 +7,20 @@ namespace MagicCollections.Tests;
 public sealed class ServiceRegistratorTests
 {
     [Fact]
-    public void Registers_separate_handlers_for_configured_Radarr_and_Sonarr_instances()
+    public void Registers_one_handler_for_all_configured_arr_bases()
     {
         using var provider = PluginTestServices.BuildProvider(new()
         {
-            RadarrServers = [new() { BaseUrl = "https://radarr.example.com", ApiKey = "radarr-key" }],
-            SonarrServers = [new() { BaseUrl = "https://sonarr.example.com", ApiKey = "sonarr-key" }]
+            ArrServers =
+            [
+                new() { BaseUrl = "https://first.example.com", ApiKey = "first-key" },
+                new() { BaseUrl = "https://second.example.com", ApiKey = "second-key" }
+            ]
         });
         var handlers = provider.GetServices<ISourceListHandler>();
 
-        var radarr = Assert.Single(handlers, h => h.Supports(new("https://radarr.example.com/watched")));
-        Assert.Equal("Radarr", radarr.SourceTag);
-        var sonarr = Assert.Single(handlers, h => h.Supports(new("https://sonarr.example.com/watched")));
-        Assert.Equal("Sonarr", sonarr.SourceTag);
+        var first = Assert.Single(handlers, h => h.Supports(new("https://first.example.com/watched")));
+        Assert.Same(first, Assert.Single(handlers, h => h.Supports(new("https://second.example.com/watched"))));
     }
 
     [Fact]

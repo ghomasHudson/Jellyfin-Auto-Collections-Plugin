@@ -4,17 +4,24 @@ namespace Jellyfin.Plugin.MagicCollections.Configuration;
 
 internal static class ArrServerValidation
 {
+    internal const string InvalidKey = "Enter an API key with no spaces or non-ASCII characters.";
+
     public static void EnsureValid(PluginConfiguration config)
     {
+        var servers = config.ArrServers;
         var bases = new HashSet<(string Origin, string Path)>();
-        if (CheckBases(config.RadarrServers?.Select(row => row?.BaseUrl),
-            config.SonarrServers?.Select(row => row?.BaseUrl), bases) is { } error)
+        if (CheckBases(servers.Select(row => row?.BaseUrl), bases) is { } error)
         {
-            throw new ArgumentException($"{error.Service} server {error.Index + 1}: {error.Message}");
+            throw new ArgumentException($"*arr server {error.Index + 1}: {error.Message}");
         }
 
-        CheckKeys(ArrService.Radarr, config.RadarrServers);
-        CheckKeys(ArrService.Sonarr, config.SonarrServers);
+        for (var index = 0; index < servers.Length; index++)
+        {
+            if (ArrTagSource.ReadApiKey(servers[index]?.ApiKey) is null)
+            {
+                throw new ArgumentException($"*arr server {index + 1}: {InvalidKey}");
+            }
+        }
 
         if (bases.Count == 0)
         {
@@ -30,45 +37,34 @@ internal static class ArrServerValidation
         }
     }
 
-    public static ArrBaseError? FindInvalidBase(IEnumerable<string?>? radarrBases, IEnumerable<string?>? sonarrBases) =>
-        CheckBases(radarrBases, sonarrBases, []);
+    public static ArrBaseError? FindInvalidBase(IEnumerable<string?>? bases) => CheckBases(bases ?? [], []);
 
-    private static ArrBaseError? CheckBases(IEnumerable<string?>? radarrBases, IEnumerable<string?>? sonarrBases,
+    private static ArrBaseError? CheckBases(IEnumerable<string?> bases,
         HashSet<(string Origin, string Path)> seen)
     {
-        return CheckServiceBases(ArrService.Radarr, radarrBases ?? []) ??
-            CheckServiceBases(ArrService.Sonarr, sonarrBases ?? []);
-
-        ArrBaseError? CheckServiceBases(ArrService service, IEnumerable<string?> bases)
+        var index = 0;
+        foreach (var baseUrl in bases)
         {
-            var index = 0;
-            foreach (var baseUrl in bases)
+            if (CheckBase(baseUrl, seen, out _) is { } message)
             {
-                if (ArrTagSource.ParseBase(baseUrl) is not { } location)
-                {
-                    return new(service.ToString(), index,
-                        "Enter a valid HTTP or HTTPS base URL without credentials, a query string, a fragment, or invalid path segments.");
-                }
-                if (!seen.Add(location))
-                {
-                    return new(service.ToString(), index, "This base URL is already used by another Radarr or Sonarr server.");
-                }
-                index++;
+                return new(index, message);
             }
-            return null;
+            index++;
         }
+        return null;
     }
 
-    private static void CheckKeys(ArrService service, ArrServerConfiguration[]? servers)
+    internal static string? CheckBase(string? baseUrl, HashSet<(string Origin, string Path)> seen,
+        out (string Origin, string Path) location)
     {
-        for (var index = 0; index < servers?.Length; index++)
+        if (ArrTagSource.ParseBase(baseUrl) is not { } parsed)
         {
-            if (ArrTagSource.ReadApiKey(servers[index]?.ApiKey) is null)
-            {
-                throw new ArgumentException($"{service} server {index + 1}: Enter an API key with no spaces or non-ASCII characters.");
-            }
+            location = default;
+            return "Enter a valid HTTP or HTTPS base URL without credentials, a query string, a fragment, or invalid path segments.";
         }
+        location = parsed;
+        return seen.Add(location) ? null : "This base URL is already used by another Radarr or Sonarr server.";
     }
 }
 
-internal sealed record ArrBaseError(string Service, int Index, string Message);
+internal sealed record ArrBaseError(int Index, string Message);
