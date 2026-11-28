@@ -7,7 +7,7 @@ namespace MagicCollections.Tests;
 public sealed class ServiceRegistratorTests
 {
     [Fact]
-    public void Registers_a_Radarr_handler_that_uses_the_configured_instances()
+    public void Registers_separate_handlers_for_configured_Radarr_and_Sonarr_instances()
     {
         using var provider = PluginTestServices.BuildProvider(new()
         {
@@ -16,9 +16,10 @@ public sealed class ServiceRegistratorTests
         });
         var handlers = provider.GetServices<ISourceListHandler>();
 
-        var handler = Assert.Single(handlers, h => h.Supports(new("https://radarr.example.com/watched")));
-        Assert.IsType<RadarrHandler>(handler);
-        Assert.False(handler.Supports(new("https://sonarr.example.com/watched")));
+        var radarr = Assert.Single(handlers, h => h.Supports(new("https://radarr.example.com/watched")));
+        Assert.Equal("Radarr", radarr.SourceTag);
+        var sonarr = Assert.Single(handlers, h => h.Supports(new("https://sonarr.example.com/watched")));
+        Assert.Equal("Sonarr", sonarr.SourceTag);
     }
 
     [Fact]

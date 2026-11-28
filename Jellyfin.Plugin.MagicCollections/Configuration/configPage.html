@@ -52,7 +52,7 @@
                     <div id="magicCollectionsUrls" role="group" aria-labelledby="magicCollectionsUrlsHeading"></div>
                     <details id="magicCollectionsArr" class="settingsSection">
                         <summary>*arr</summary>
-                        <p class="fieldDescription">Enter each server's base URL (including any reverse proxy path) and its API key. Use a different base URL for each server. To import a Radarr tag, add a source list URL such as <code>https://media.example.com/radarr/family-movies</code>. Never put a key in a URL.</p>
+                        <p class="fieldDescription">Enter each Radarr or Sonarr server's base URL (including any reverse proxy path) and its API key. Use a different base URL for each server. Under Source list URLs, add the base URL followed by the tag label, for example <code>https://media.example.com/radarr/family-movies</code> or <code>https://media.example.com/sonarr/family-shows</code>. Never put a key in a URL.</p>
                         <section data-arr-service="Radarr">
                             <h3>Radarr</h3>
                             <div class="arrServerRows"></div>
@@ -60,7 +60,6 @@
                         </section>
                         <section data-arr-service="Sonarr">
                             <h3>Sonarr</h3>
-                            <p class="fieldDescription">Sonarr pairs can be saved now; Sonarr tag sources are not supported yet.</p>
                             <div class="arrServerRows"></div>
                             <button is="emby-button" type="button" class="raised arrAddServer">Add Sonarr server</button>
                         </section>

@@ -45,7 +45,6 @@ public sealed class SourceListUrlControllerTests
     [InlineData("http://media.example.com/Radarr/tag_name", false)]
     [InlineData("https://media.example.com:9443/Radarr/tag_name", false)]
     [InlineData("https://media.example.com.evil.invalid/Radarr/tag_name", false)]
-    [InlineData("https://media.example.com/Sonarr/tag_name", false)]
     [InlineData("https://media.example.com/Radarr", false)]
     [InlineData("https://media.example.com/Radarr/tag_name/", false)]
     [InlineData("https://media.example.com/Radarr/extra/tag_name", false)]
@@ -121,5 +120,24 @@ public sealed class SourceListUrlControllerTests
         Assert.False(controller.Validate(new(draft + "/extra/tag_name", [draft], [])));
         Assert.False(controller.Validate(new(draft + "/tag_name", [draft], [draft + "/"])));
         Assert.True(controller.Validate(new("https://letterboxd.com/example/list/movies/", [draft], [])));
+    }
+
+    [Fact]
+    public void Sonarr_validation_uses_the_saved_or_draft_Sonarr_base_without_mixing_services()
+    {
+        const string saved = "https://media.example.com/sonarr";
+        const string draft = "https://media.example.com/new-sonarr";
+        using var provider = PluginTestServices.BuildProvider(new()
+        {
+            SonarrServers = [new() { BaseUrl = saved, ApiKey = "saved-sonarr-key" }]
+        });
+        var controller = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
+
+        Assert.True(controller.Validate(new(saved + "/family-shows")));
+        Assert.False(controller.Validate(new(draft + "/family-shows")));
+        Assert.False(controller.Validate(new(saved + "/family-shows?apikey=key")));
+        Assert.True(controller.Validate(new(draft + "/family-shows", [], [draft])));
+        Assert.False(controller.Validate(new(saved + "/family-shows", [], [draft])));
+        Assert.False(controller.Validate(new(draft + "/family-shows", [draft], [draft + "/"])));
     }
 }

@@ -44,6 +44,7 @@ async function testPage() {
     const anotherRadarr = 'https://another.example.com';
     const sonarr = 'https://sonarr.example.com/sonarr';
     const arrSource = radarr + '/movie-night';
+    const sonarrSource = sonarr + '/family-shows';
     const arrChecks = [];
     let checkContainedKey = false;
     const checked = [];
@@ -102,6 +103,7 @@ async function testPage() {
                 arrChecks.push(body);
                 return body.RadarrBaseUrls?.includes(radarr) ?? false;
             }
+            if (url === sonarrSource) return body.SonarrBaseUrls?.includes(sonarr) ?? false;
             return url === supported;
         }
     };
@@ -370,7 +372,8 @@ async function testPage() {
             }
         }
         enter(field(3), arrSource);
-        await until(() => invalid(3), 'A Radarr list without a configured base should be marked unsupported.');
+        enter(field(4), sonarrSource);
+        await until(() => invalid(3) && invalid(4), '*arr lists without configured bases should be marked unsupported.');
         enter(bases('Radarr')[0], '  ' + radarr + '  ');
         save.click();
         await wait(30);
@@ -390,16 +393,16 @@ async function testPage() {
         enter(keys('Radarr')[1], 'second-radarr-draft-key');
         enter(bases('Sonarr')[0], sonarr);
         enter(keys('Sonarr')[0], 'sonarr-draft-key');
-        await until(() => arrChecks.at(-1)?.RadarrBaseUrls?.includes(anotherRadarr) && !invalid(3),
-            'A source URL should be rechecked against the edited base before saving.');
+        await until(() => arrChecks.at(-1)?.RadarrBaseUrls?.includes(anotherRadarr) && !invalid(3) && !invalid(4),
+            'Both source URLs should be rechecked against the edited bases before saving.');
         const draftCheck = arrChecks.at(-1);
         if (checkContainedKey || Object.keys(draftCheck).sort().join() !== 'RadarrBaseUrls,SonarrBaseUrls,Url' ||
                 draftCheck.RadarrBaseUrls.join() !== [radarr, anotherRadarr].join() || draftCheck.SonarrBaseUrls.join() !== sonarr) {
             throw new Error('A draft URL check should send only the source URL and base URLs, never API keys.');
         }
         save.click();
-        await until(() => saveCount === 9 && field(3)?.value === arrSource && keys('Radarr')[0]?.value === 'radarr-draft-key',
-            'Saving should persist and reload both the source URL and the Radarr settings.');
+        await until(() => saveCount === 9 && field(3)?.value === arrSource && field(4)?.value === sonarrSource &&
+            keys('Radarr')[0]?.value === 'radarr-draft-key', 'Saving should persist and reload both source URLs and settings.');
         if (JSON.stringify(saved.RadarrServers) !== JSON.stringify([
                 { BaseUrl: radarr, ApiKey: 'radarr-draft-key' },
                 { BaseUrl: anotherRadarr, ApiKey: 'second-radarr-draft-key' }
@@ -409,13 +412,13 @@ async function testPage() {
         }
         arrPanel.querySelector('button[aria-label="Remove Radarr server 1"]').click();
         arrPanel.querySelector('button[aria-label="Remove Sonarr server 1"]').click();
-        await until(() => invalid(3), 'Removing a base should recheck its source URLs.');
+        await until(() => invalid(3) && invalid(4), 'Removing bases should recheck both source URLs.');
         save.click();
         await until(() => saveCount === 10 && bases('Radarr')[0]?.value === anotherRadarr,
             'Saving should remove only the selected pairs.');
         if (saved.RadarrServers.length !== 1 || saved.RadarrServers[0].ApiKey !== 'second-radarr-draft-key' ||
-                saved.SonarrServers.length !== 0 || !saved.SourceUrls.includes(arrSource)) {
-            throw new Error('Removing a row should not remove the other pair or its source URL.');
+                saved.SonarrServers.length !== 0 || !saved.SourceUrls.includes(arrSource) || !saved.SourceUrls.includes(sonarrSource)) {
+            throw new Error('Removing server rows should not remove the remaining pair or source URLs.');
         }
         result.textContent = 'PASS';
     } catch (error) {
