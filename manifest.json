@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/main/logo.png",
     "versions": [
       {
+        "version": "0.7.0.0",
+        "targetAbi": "10.11.5.0",
+        "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.7.0.0/magic-collections-0.7.0.0.zip",
+        "checksum": "f9d238994c6b8da9703549ac10c2d278",
+        "timestamp": "2026-11-28T01:20:29Z",
+        "changelog": "## v0.7.0.0 (2026-11-28)\n\n### Feat\n\n- **sync**: mirror managed collections from source lists\n\n[Release notes on GitHub](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.7.0.0)"
+      },
+      {
         "version": "0.6.0.0",
         "targetAbi": "10.11.5.0",
         "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.6.0.0/magic-collections-0.6.0.0.zip",

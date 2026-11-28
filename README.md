@@ -14,21 +14,23 @@ New to Magic Collections? [Start with the wiki walkthrough](https://github.com/g
 
 1. Open your Jellyfin server in a browser and sign in with your admin account.
 2. Go to **Dashboard → Plugins → Manage Repositories**. If you see a **Repositories** tab instead, open it.
-3. Select **New Repository** (or **Add**). For **Repository Name**, enter `Magic Collections`. For **Repository URL**, paste:
+3. Select **New Repository**. For **Repository Name**, enter `Magic Collections`. For **Repository URL**, paste:
 
    ```text
    https://raw.githubusercontent.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/main/manifest.json
    ```
 
-4. Select **Add** (or **Save**).
-5. Return to **Plugins**. Under **Available** (or **Catalog**), open **Magic Collections** and select **Install**.
-6. On the **Dashboard**, select **Restart**. If you run Jellyfin in Docker, you can restart the container instead.
+4. Select **Add**.
+5. Return to **Plugins**. Under **Available**, open **Magic Collections** and select **Install**.
+6. On the **Dashboard**, select **Restart**.
 
 ## Setup
 
-1. Open **Dashboard → Plugins → Magic Collections** and select **Settings** if shown. Paste a [supported list URL](#supported-list-sources) into the blank field. To add more URLs, use the next blank field that appears. Select **Save**.
+1. Open **Dashboard → Plugins → Magic Collections** and select **Settings**. Paste [supported list URLs](#supported-list-sources) into the blank fields. Select **Save**.
 2. Go to **Dashboard → Scheduled Tasks** and select the play button next to **Sync Magic Collections**. The task also runs daily at 03:00 server time by default.
 3. If the task fails, check the Jellyfin server log.
+
+You should now see collections for each of your list URLs.
 
 ### Supported List Sources
 
@@ -36,10 +38,10 @@ New to Magic Collections? [Start with the wiki walkthrough](https://github.com/g
 - mdblist - e.g. [Top Movies of the week](https://mdblist.com/lists/garycrawfordgc/top-movies-of-the-week)
 - [Steven Lu Popular movies](https://github.com/sjlu/popular-movies)
 - [BFI](https://www.bfi.org.uk/articles/type/lists)
-- [Trakt lists and charts](docs/trakt.md)
+- [Trakt lists and charts](docs/trakt.md) [privacy policy](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/wiki/Privacy-Policy)
 - [Jellyfin library queries](docs/jellyfin-queries.md)
 
-See the [privacy policy](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/wiki/Privacy-Policy) for what the plugin shares with Trakt and how to disconnect your account.
+See [supported list URLs](#supported-list-sources) for more details.
 
 ### Not yet supported
 
@@ -49,7 +51,6 @@ Follow these issues for the status of other sources from Jellyfin Auto Collectio
 - [ListMania](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/12)
 - [Radarr tags](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/19)
 - [Sonarr tags](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/20)
-- [They Shoot Pictures, Don’t They? (TSPDT)](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/17)
 
 # Developers
 
