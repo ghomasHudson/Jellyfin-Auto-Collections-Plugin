@@ -4,10 +4,11 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.IO;
 
 namespace Jellyfin.Plugin.MagicCollections;
 
-internal sealed class JellyfinQueryHandler(ILibraryManager library)
+internal sealed class JellyfinQueryHandler(ILibraryManager library, IFileSystem fileSystem)
 {
     public Guid[] Read(JellyfinQuery source, CancellationToken cancellationToken)
     {
@@ -42,17 +43,9 @@ internal sealed class JellyfinQueryHandler(ILibraryManager library)
             IsPlaceHolder = false,
             GroupByPresentationUniqueKey = false,
             GroupBySeriesPresentationUniqueKey = false,
-            Genres = source.Genres,
-            Tags = source.Tags,
-            Years = source.Years,
-            Person = source.Person,
-            SearchTerm = source.SearchTerm,
             StudioIds = studioIds.ToArray()
         };
-        foreach (var filter in source.AdditionalFilters)
-        {
-            filter.Apply(query);
-        }
+        source.ApplyNativeFilters(query);
         var items = library.GetItemList(query, allowExternalContent: false);
 
         var ids = new HashSet<Guid>();
@@ -116,13 +109,25 @@ internal sealed class JellyfinQueryHandler(ILibraryManager library)
                 throw new InvalidOperationException("A configured Jellyfin library isn't indexed yet.");
             }
             found = true;
+            var physicalFolders = new List<Folder>();
             foreach (var root in folder.PhysicalFolderIds)
             {
-                if (root == Guid.Empty || library.GetItemById(root) is not Folder)
+                cancellationToken.ThrowIfCancellationRequested();
+                if (root == Guid.Empty || library.GetItemById(root) is not Folder { Path: not null } physicalFolder)
                 {
                     throw new InvalidOperationException("A configured Jellyfin library path could not be resolved.");
                 }
-                roots.Add(root);
+                physicalFolders.Add(physicalFolder);
+            }
+            foreach (var location in entry.Locations)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var matchingRoots = physicalFolders.Where(physical => fileSystem.AreEqual(physical.Path, location)).ToArray();
+                if (matchingRoots.Length == 0)
+                {
+                    throw new InvalidOperationException("A configured Jellyfin library path could not be resolved.");
+                }
+                roots.UnionWith(matchingRoots.Select(physical => physical.Id));
             }
         }
         if (parentId is not null && !found)

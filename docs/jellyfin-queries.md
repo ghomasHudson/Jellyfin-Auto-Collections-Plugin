@@ -21,7 +21,7 @@ Start with `jellyfin/` and separate `Key=Value` pairs with `&`. Keys are case-in
 
 ### Filters
 
-Use commas to separate list values. Each filter must match; within a list, any listed value can match.
+Use commas to separate list values. Encode a comma within a metadata name as `%2C`. Each filter must match; within a list, any listed value can match.
 
 #### Titles and metadata
 
@@ -31,7 +31,6 @@ Use commas to separate list values. Each filter must match; within a list, any l
 | `person` | Match one credited name as stored by Jellyfin, including case; any credited role counts. |
 | `searchTerm` | Use Jellyfin's title search, where `%` and `_` can match multiple titles as wildcards. |
 | `nameStartsWith`, `nameStartsWithOrGreater`, `nameLessThan` | Match a prefix, an inclusive lower bound, or an exclusive upper bound against Jellyfin's **sort title**. This title can differ from the one you see in your library. |
-| `genreIds`, `personIds`, `studioIds` | Match any of the listed Jellyfin IDs for a genre, credited person, or studio. These are alternatives to `genres`, `person`, and `studios`, respectively. Don't combine the name and ID forms of the same filter. |
 
 #### Metadata checks
 
@@ -78,7 +77,7 @@ For a specific time, give an ISO 8601 timestamp with a time zone. Encode `:` as 
 | --- | --- |
 | `parentId` | Restrict the search to one enabled top-level library. Use its Jellyfin library ID, not a library name, folder path, or a user ID. Jellyfin lists these IDs as `ItemId` in its library settings API (`GET /Library/VirtualFolders`). |
 | `limit` | Select up to this many distinct items after all filters. It must be a positive whole number. With no `sortBy`, the selection is stable and based on item ID. |
-| `sortBy` | Only `Random` is supported. With a limit, it takes a fresh sample on each sync, which can include items from the previous run. It does not set the display order of the collection. |
+| `sortBy` | Only `Random` is supported, and it requires `limit`. It takes a fresh sample on each sync, which can include items from the previous run. It does not set the display order of the collection. |
 
 ### Display
 
